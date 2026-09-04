@@ -1,0 +1,18 @@
+{
+ "library": "widgetlib",
+ "commit": "0123456",
+ "recorded": "2026-09-04T15:00:00Z",
+ "tests": [
+  {"nodeid": "tests/test_kernel.py::test_sum", "case": "kernel-sum", "tier": "A",
+   "srq": "summation error", "ref": null, "seam": null, "outcome": "passed",
+   "points": []},
+  {"nodeid": "tests/test_bench.py::test_loop", "case": "bench-loop", "tier": "D",
+   "srq": "loop residual", "ref": "bench-2026", "seam": null, "outcome": "passed",
+   "points": []},
+  {"nodeid": "tests/test_bench.py::test_cross", "case": "bench-loop", "tier": "B",
+   "srq": null, "ref": "othercode", "seam": null, "outcome": "skipped",
+   "points": []},
+  {"nodeid": "tests/test_orphan.py::test_thing", "case": "not-filed", "tier": "A",
+   "srq": null, "ref": null, "seam": null, "outcome": "passed", "points": []}
+ ]
+}
