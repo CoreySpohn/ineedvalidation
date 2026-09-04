@@ -30,6 +30,23 @@ Tiers: `A` code verification, `B` cross-code benchmark, `C` solution verificatio
 
 The markers register through a pytest plugin entry point, so installing the package is the only setup a repository needs.
 
+## Collecting the evidence
+
+```console
+$ pytest --inv-evidence evidence/mylib.json
+```
+
+One JSON file per repository lists every marked test, its case, its tier and the outcome it reached. A table in `pyproject.toml` can assign a case and tier by test path, so the tagging cost is per directory rather than per test.
+
+## Linting and rendering a hierarchy
+
+```console
+$ ineedvalidation lint hierarchy/
+$ ineedvalidation render hierarchy/
+```
+
+The hierarchy is a directory of Markdown notes with YAML frontmatter, one per case. The lint checks the notes for internal consistency and checks them against the collected tests in both directions: a case no node owns, a node with no tests, a response quantity a node does not list, or a validation level claimed without a passing test that supports it. The renderer draws the tiered figure through `d2`, with named views and optional hand-edited overrides for figures that have to look right in a talk.
+
 ## Status
 
-Pre-alpha. The markers and plugin registration exist; evidence collection, the hierarchy lint and the renderer are in progress.
+Pre-alpha. The markers, the evidence collector, the hierarchy lint and the renderer work; the API is not yet stable.

@@ -5,5 +5,7 @@ Declare what a test demonstrates, collect those declarations into an evidence le
 ```{toctree}
 :maxdepth: 1
 
+markers
+hierarchy
 autoapi/index
 ```
