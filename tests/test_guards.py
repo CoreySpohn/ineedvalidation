@@ -38,3 +38,10 @@ def test_no_heavy_imports():
         for lib in FORBIDDEN_LIBS:
             assert f"import {lib}" not in text, f"{path.name} imports {lib}"
             assert f"from {lib}" not in text, f"{path.name} imports {lib}"
+
+
+def test_the_collector_half_needs_nothing_but_pytest():
+    """The modules a tagged repository imports must not reach for the render extra."""
+    for name in ("__init__.py", "marks.py", "plugin.py", "schema.py"):
+        text = (SRC / name).read_text()
+        assert "import yaml" not in text, f"{name} imports yaml"
