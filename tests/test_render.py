@@ -1,14 +1,13 @@
 import re
-import shutil
 from pathlib import Path
 
 import pytest
+from conftest import HAVE_BINARIES
 from test_nodes import HIER
 
 from ineedvalidation import d2, evidence, nodes, views
 
 SAMPLE = Path(__file__).parent / "data" / "sample.svg"
-HAVE_BINARIES = shutil.which("d2") and shutil.which("rsvg-convert")
 
 
 def loaded():

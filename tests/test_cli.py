@@ -1,5 +1,7 @@
 import shutil
 
+import pytest
+from conftest import HAVE_BINARIES
 from test_nodes import HIER
 
 from ineedvalidation import cli
@@ -67,6 +69,7 @@ def test_an_unknown_view_name_is_an_error(capsys, tmp_path):
     assert "no view named nope" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(not HAVE_BINARIES, reason="needs d2 and rsvg-convert")
 def test_render_writes_the_two_builtin_views(tmp_path):
     hierarchy = copy(tmp_path)
     assert cli.main(["render", str(hierarchy)]) == 0
@@ -75,6 +78,7 @@ def test_render_writes_the_two_builtin_views(tmp_path):
         assert (hierarchy / "output" / f"{name}.png").exists()
 
 
+@pytest.mark.skipif(not HAVE_BINARIES, reason="needs d2 and rsvg-convert")
 def test_render_of_a_branch_names_the_output_for_the_root(tmp_path):
     hierarchy = copy(tmp_path)
     assert cli.main(["render", str(hierarchy), "--root", "SS-mixer"]) == 0
@@ -83,6 +87,7 @@ def test_render_of_a_branch_names_the_output_for_the_root(tmp_path):
     assert "Mixer stage" in text
 
 
+@pytest.mark.skipif(not HAVE_BINARIES, reason="needs d2 and rsvg-convert")
 def test_all_views_includes_the_view_files(tmp_path):
     hierarchy = copy(tmp_path)
     assert cli.main(["render", str(hierarchy), "--all-views"]) == 0
