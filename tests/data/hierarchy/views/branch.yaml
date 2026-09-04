@@ -1,0 +1,8 @@
+name: branch
+root: SS-mixer
+depth: all
+mode: status
+layout: elk
+show: [libraries, tiers]
+highlight: [widgetlib]
+title: Mixer branch

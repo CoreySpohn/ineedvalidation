@@ -144,3 +144,17 @@ class NodeSummary:
     tests: int = 0
     skipped: int = 0
     computed: bool = False
+
+
+@dataclass(frozen=True)
+class View:
+    """One named rendering of the hierarchy."""
+
+    name: str
+    root: str | None = None
+    depth: str = "all"
+    mode: str = "status"
+    layout: str = "elk"
+    show: tuple[str, ...] = ("libraries", "tiers")
+    highlight: tuple[str, ...] = ()
+    title: str | None = None
