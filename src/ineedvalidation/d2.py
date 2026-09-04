@@ -7,11 +7,18 @@ where its real edges would let it drift.
 
 from __future__ import annotations
 
+import base64
+import re
+import shutil
+import subprocess
 import textwrap
+from pathlib import Path
 
+from . import views
 from .schema import HIERARCHY_TIERS, NodeSummary, View
 
 NODE_W, NODE_H = 250, 110  # px; uniform for every node
+FONT_FAMILY = "Source Sans 3"
 
 TIER_LABEL = {
     "complete": "Complete\nsystem",
@@ -195,3 +202,143 @@ def emit(nodes: dict, summary: dict, view: View) -> str:
             lines.append("  " + entry)
         lines.append("}")
     return "\n".join(lines) + "\n"
+
+
+def inject_tier_labels(svg: str, tiers: list[str], fg: str, margin: int = 230) -> str:
+    """Write each tier label at the left margin of its row, and widen the drawing.
+
+    Rows come from the hidden anchors ``A<i>``. The font faces are pointed at the
+    installed family because rsvg-convert cannot read the data-URI faces D2 embeds.
+    """
+    xs = [float(v) for v in re.findall(r'<rect x="([\d.]+)"', svg)]
+    xs += [float(v) for v in re.findall(r'<path d="M ([\d.]+) ', svg)]
+    xs += [
+        float(v) - float(r)
+        for v, r in re.findall(r'<ellipse cx="([\d.]+)" cy="[\d.]+" rx="([\d.]+)"', svg)
+    ]
+    left = min(xs) if xs else 0.0
+    labels = []
+    for i, tier in enumerate(tiers):
+        cls = base64.b64encode(f"A{i}".encode()).decode()
+        found = re.search(
+            r'<g class="'
+            + re.escape(cls)
+            + r'"[^>]*>.*?<rect x="([\d.]+)" y="([\d.]+)" '
+            r'width="[\d.]+" height="([\d.]+)"',
+            svg,
+            re.S,
+        )
+        if not found:
+            continue
+        y = float(found.group(2)) + float(found.group(3)) / 2
+        rows = TIER_LABEL[tier].split("\n")
+        x = left - 40
+        tspans = "".join(
+            f'<tspan x="{x:.1f}" dy="{0 if j == 0 else 26}">{row}</tspan>'
+            for j, row in enumerate(rows)
+        )
+        labels.append(
+            f'<text x="{x:.1f}" y="{y - 13 * (len(rows) - 1) + 8:.1f}" '
+            f'fill="{fg}" class="text-bold" '
+            f'style="text-anchor:end;font-size:22px">{tspans}</text>'
+        )
+    # geometry: outer <svg viewBox="0 0 W H"> wraps inner
+    # <svg width="W" height="H" viewBox="x y w h">
+    svg = re.sub(
+        r'<svg class="([^"]+)" width="([\d.]+)" height="([\d.]+)" '
+        r'viewBox="([-\d.]+) ([-\d.]+) ([\d.]+) ([\d.]+)">',
+        lambda m: (
+            f'<svg class="{m.group(1)}" width="{int(float(m.group(2))) + margin}" '
+            f'height="{m.group(3)}" '
+            f'viewBox="{float(m.group(4)) - margin:.0f} {m.group(5)} '
+            f'{float(m.group(6)) + margin:.0f} {m.group(7)}">'
+        ),
+        svg,
+        count=1,
+    )
+    svg = re.sub(
+        r'(preserveAspectRatio="xMinYMin meet" viewBox=")'
+        r'([-\d.]+) ([-\d.]+) ([\d.]+) ([\d.]+)"',
+        lambda m: (
+            f"{m.group(1)}{m.group(2)} {m.group(3)} "
+            f'{float(m.group(4)) + margin:.0f} {m.group(5)}"'
+        ),
+        svg,
+        count=1,
+    )
+    # background rect of the inner svg: widen too
+    svg = re.sub(
+        r'<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)" '
+        r'rx="0.000000" fill="(#[0-9a-fA-F]+)" stroke-width="0" />',
+        lambda m: (
+            f'<rect x="{float(m.group(1)) - margin:.0f}" y="{m.group(2)}" '
+            f'width="{float(m.group(3)) + margin:.0f}" height="{m.group(4)}" '
+            f'rx="0" fill="{m.group(5)}" stroke-width="0" />'
+        ),
+        svg,
+        count=1,
+    )
+    # fonts: rsvg cannot read D2's data-URI faces; use an installed family
+    svg = re.sub(
+        r'font-family: "?d2-\d+-font-bold"?;',
+        f'font-family: "{FONT_FAMILY}"; font-weight: 700;',
+        svg,
+    )
+    svg = re.sub(
+        r'font-family: "?d2-\d+-font-italic"?;',
+        f'font-family: "{FONT_FAMILY}"; font-style: italic;',
+        svg,
+    )
+    svg = re.sub(
+        r'font-family: "?d2-\d+-font-regular"?;', f'font-family: "{FONT_FAMILY}";', svg
+    )
+    svg = re.sub(r"@font-face \{[^}]*\}", "", svg)
+    return svg.replace("</svg>", "".join(labels) + "</svg>", 1)
+
+
+def require_binary(name: str) -> None:
+    """Raise when an external rendering binary is missing."""
+    if shutil.which(name) is None:
+        raise RuntimeError(
+            f"{name} is not on PATH; it is required to render the hierarchy"
+        )
+
+
+def _run(command: list[str]) -> None:
+    """Run an external command and raise with its stderr when it fails."""
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise RuntimeError(f"{command[0]} failed: {result.stderr.strip()}")
+
+
+def render(nodes, summary, view, outdir, views_dir=None):
+    """Write the generated D2, compile it or its override, and rasterize."""
+    require_binary("d2")
+    require_binary("rsvg-convert")
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    generated = outdir / f"{view.name}.gen.d2"
+    generated.write_text(emit(nodes, summary, view))
+    source = views.override_path(views_dir, view.name) or generated
+    svg = outdir / f"{view.name}.svg"
+    theme = "200" if view.mode == "status" else "0"
+    _run(
+        [
+            "d2",
+            "--layout",
+            view.layout,
+            "--theme",
+            theme,
+            "--pad",
+            "30",
+            str(source),
+            str(svg),
+        ]
+    )
+    fg = "#ffffff" if view.mode == "status" else "#000000"
+    tiers = [t for t in HIERARCHY_TIERS if any(n.tier == t for n in nodes.values())]
+    svg.write_text(inject_tier_labels(svg.read_text(), tiers, fg))
+    png = outdir / f"{view.name}.png"
+    background = "black" if view.mode == "status" else "white"
+    _run(["rsvg-convert", "-z", "2", "-b", background, "-o", str(png), str(svg)])
+    return png
