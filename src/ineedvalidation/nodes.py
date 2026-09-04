@@ -47,10 +47,29 @@ def _evidence_for(node: Node, summary: dict | None) -> tuple[str, ...]:
     return node.evidence_declared
 
 
+def _seam_is_coupled(nodes: dict[str, Node], producer: str, consumer: str) -> bool:
+    """True when a node of one library couples to a node of the other."""
+
+    def owned(library):
+        return {nid for nid, n in nodes.items() if library in n.libraries_planned}
+
+    lower, upper = owned(producer), owned(consumer)
+    if not lower or not upper:
+        return False
+    for nid in lower:
+        if any(p in upper for p in nodes[nid].couples_to):
+            return True
+    for nid in upper:
+        if any(p in lower for p in nodes[nid].couples_to):
+            return True
+    return False
+
+
 def lint(
     nodes: dict[str, Node],
     summary: dict | None = None,
     library_text: str | None = None,
+    unfiled: dict[str, tuple[str, ...]] | None = None,
 ) -> list[str]:
     """Report every rule violation in the hierarchy, as one line each."""
     problems: list[str] = []
@@ -100,4 +119,21 @@ def lint(
                 f"{nid}: validation_level {level} needs measurements on the "
                 "real system (Table 9)"
             )
+        if summary is not None and nid in summary:
+            if node.cases and not summary[nid].computed:
+                problems.append(
+                    f"{nid}: no evidence, {len(node.cases)} case(s) declared"
+                )
+            for srq in summary[nid].srqs_covered:
+                if srq not in node.srqs:
+                    problems.append(f"{nid}: srq {srq} is not one of the node srqs")
+            for producer, consumer in summary[nid].seams:
+                if not _seam_is_coupled(nodes, producer, consumer):
+                    problems.append(
+                        f"{nid}: seam {producer} -> {consumer} has no couples_to edge"
+                    )
+    for case, libraries in (unfiled or {}).items():
+        problems.append(
+            f"case {case} is not owned by any node (from {', '.join(libraries)})"
+        )
     return problems

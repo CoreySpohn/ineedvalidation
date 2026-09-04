@@ -2,7 +2,8 @@ from dataclasses import replace
 
 from test_nodes import HIER
 
-from ineedvalidation import nodes
+from ineedvalidation import evidence, nodes
+from ineedvalidation.schema import TestRecord as Record
 
 
 def loaded():
@@ -79,3 +80,62 @@ def test_library_check_runs_only_with_a_library_list():
     assert any(
         "not in the library list" in p for p in nodes.lint(got, library_text="other\n")
     )
+
+
+def summary_for(got):
+    return evidence.summarize(got, evidence.load_dir(HIER / "evidence"))
+
+
+def test_a_node_with_cases_but_no_tests_is_flagged():
+    got = loaded()
+    problems = nodes.lint(got, summary=summary_for(got))
+    assert any("S-front: no evidence" in p for p in problems)
+
+
+def test_an_srq_a_node_does_not_list_is_flagged():
+    got = loaded()
+    got["B-bench"] = replace(got["B-bench"], srqs=("something else",))
+    problems = nodes.lint(got, summary=summary_for(got))
+    assert any("srq loop residual" in p for p in problems)
+
+
+def test_unfiled_cases_are_reported():
+    got = loaded()
+    files = evidence.load_dir(HIER / "evidence")
+    problems = nodes.lint(
+        got,
+        summary=evidence.summarize(got, files),
+        unfiled=evidence.unfiled_cases(got, files),
+    )
+    assert any("case not-filed is not owned by any node" in p for p in problems)
+
+
+def test_level_two_needs_a_passing_tier_d_test_not_a_marked_one():
+    got = loaded()
+    downgraded = [
+        replace(
+            f,
+            tests=tuple(
+                replace(t, outcome="skipped") if t.tier == "D" else t for t in f.tests
+            ),
+        )
+        for f in evidence.load_dir(HIER / "evidence")
+    ]
+    problems = nodes.lint(got, summary=evidence.summarize(got, downgraded))
+    assert any(
+        "B-bench: validation_level 2 claimed without Tier D" in p for p in problems
+    )
+
+
+def test_a_seam_needs_a_couples_to_edge_between_the_two_nodes():
+    got = loaded()
+    files = evidence.load_dir(HIER / "evidence")
+    anchor = Record(
+        nodeid="tests/test_seam.py::test_anchor",
+        case="kernel-sum",
+        seam=("widgetlib", "otherlib"),
+        outcome="passed",
+    )
+    with_seam = [replace(files[0], tests=(*files[0].tests, anchor))]
+    problems = nodes.lint(got, summary=evidence.summarize(got, with_seam))
+    assert any("seam widgetlib -> otherlib" in p for p in problems)
