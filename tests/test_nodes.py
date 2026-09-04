@@ -27,3 +27,9 @@ def test_subtree_keeps_the_root_and_everything_under_it():
     loaded = nodes.load(HIER / "nodes")
     branch = nodes.subtree(loaded, "SS-mixer")
     assert set(branch) == {"SS-mixer", "B-bench", "U-kernel"}
+
+
+def test_subtree_keeps_the_loading_order():
+    loaded = nodes.load(HIER / "nodes")
+    branch = nodes.subtree(loaded, "S-front")
+    assert list(branch) == [nid for nid in loaded if nid in set(branch)]

@@ -28,7 +28,11 @@ def load(directory: Path) -> dict[str, Node]:
 
 
 def subtree(nodes: dict[str, Node], root: str) -> dict[str, Node]:
-    """The root plus every node that couples, transitively, up to it."""
+    """The root plus every node that couples, transitively, up to it.
+
+    The result keeps the order the notes were loaded in, so a branch renders
+    the same way on every run.
+    """
     keep = {root}
     changed = True
     while changed:
@@ -37,7 +41,7 @@ def subtree(nodes: dict[str, Node], root: str) -> dict[str, Node]:
             if nid not in keep and any(p in keep for p in node.couples_to):
                 keep.add(nid)
                 changed = True
-    return {k: nodes[k] for k in keep}
+    return {nid: node for nid, node in nodes.items() if nid in keep}
 
 
 def _evidence_for(node: Node, summary: dict | None) -> tuple[str, ...]:
