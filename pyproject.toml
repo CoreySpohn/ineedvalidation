@@ -1,0 +1,67 @@
+[build-system]
+requires = ['hatchling', "hatch-fancy-pypi-readme", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ineedvalidation"
+description = "Declare which physical case, evidence tier and response quantity a test exercises; collect the declarations into an evidence ledger; lint and render a validation hierarchy from it."
+authors = [{ name = "Corey Spohn", email = "corey.a.spohn@nasa.gov" }]
+dynamic = ['readme', 'version']
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Framework :: Pytest",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = ["pytest>=8"]
+
+[project.optional-dependencies]
+render = ["pyyaml>=6"]
+docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython"]
+test = ["pytest-cov", "pyyaml>=6"]
+dev = ["pre-commit"]
+
+[project.urls]
+Homepage = "https://github.com/CoreySpohn/ineedvalidation"
+Issues = "https://github.com/CoreySpohn/ineedvalidation/issues"
+
+[project.entry-points.pytest11]
+ineedvalidation = "ineedvalidation.plugin"
+
+[project.scripts]
+ineedvalidation = "ineedvalidation.cli:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/ineedvalidation/_version.py"
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[tool.ruff.lint]
+select = ["B", "D", "E", "F", "I", "UP", "RUF"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ineedvalidation"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/scripts", "/docs", "/tests", "/.github"]
