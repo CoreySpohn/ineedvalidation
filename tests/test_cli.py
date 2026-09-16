@@ -18,7 +18,7 @@ def test_lint_reports_problems_and_returns_one(capsys, tmp_path):
     assert cli.main(["lint", str(hierarchy)]) == 1
     out = capsys.readouterr().out
     assert "LINT: case not-filed is not owned by any node" in out
-    assert "LINT: S-front: no evidence" in out
+    assert "LINT: system-front: no evidence" in out
     assert "5 nodes, complete=1, system=1, subsystem=1, benchmark=1, unit=1" in out
 
 
@@ -34,12 +34,12 @@ def test_scaffold_writes_one_stub_per_unfiled_case(tmp_path):
     assert cli.main(["scaffold", str(hierarchy)]) == 0
     stub = (hierarchy / "nodes" / "unfiled-not-filed.md").read_text()
     assert "cases:\n- not-filed" in stub
-    assert "tier: ''" in stub
+    assert "level: ''" in stub
 
 
 EXISTING_STUB = """---
 id: unfiled-not-filed
-tier: ''
+level: ''
 title: something a curator started
 couples_to: []
 cases: []
@@ -81,9 +81,9 @@ def test_render_writes_the_two_builtin_views(tmp_path):
 @pytest.mark.skipif(not HAVE_BINARIES, reason="needs d2 and rsvg-convert")
 def test_render_of_a_branch_names_the_output_for_the_root(tmp_path):
     hierarchy = copy(tmp_path)
-    assert cli.main(["render", str(hierarchy), "--root", "SS-mixer"]) == 0
-    text = (hierarchy / "output" / "status_SS-mixer.gen.d2").read_text()
-    assert "C-system" not in text
+    assert cli.main(["render", str(hierarchy), "--root", "subsystem-mixer"]) == 0
+    text = (hierarchy / "output" / "status_subsystem-mixer.gen.d2").read_text()
+    assert "complete-system" not in text
     assert "Mixer stage" in text
 
 

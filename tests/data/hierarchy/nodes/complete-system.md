@@ -1,6 +1,6 @@
 ---
-id: C-system
-tier: complete
+id: complete-system
+level: complete
 title: Complete widget performance
 couples_to: []
 cases: []
@@ -11,7 +11,7 @@ srqs:
 referent: the flown widget
 referent_status: none
 evidence:
-- A
+- code-verification
 validation_level: 1
 ---
 # Complete widget performance

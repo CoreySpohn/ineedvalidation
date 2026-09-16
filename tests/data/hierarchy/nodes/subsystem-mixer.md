@@ -1,9 +1,9 @@
 ---
-id: SS-mixer
-tier: subsystem
+id: subsystem-mixer
+level: subsystem
 title: Mixer stage
 couples_to:
-- S-front
+- system-front
 cases:
 - mixer
 libraries:
@@ -13,7 +13,7 @@ srqs:
 referent: a mixer bench
 referent_status: identified
 evidence:
-- A
+- code-verification
 validation_level: 1
 ---
 # Mixer stage

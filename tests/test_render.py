@@ -21,8 +21,10 @@ def test_require_binary_names_what_is_missing():
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="no stored sample svg")
-def test_tier_labels_are_written_once_per_tier():
-    out = d2.inject_tier_labels(SAMPLE.read_text(), list(d2.HIERARCHY_TIERS), "#ffffff")
+def test_level_labels_are_written_once_per_level():
+    out = d2.inject_level_labels(
+        SAMPLE.read_text(), list(d2.HIERARCHY_LEVELS), "#ffffff"
+    )
     assert out.count('style="text-anchor:end;font-size:22px"') == 5
     assert "Unit" in out and "Complete" in out
 
@@ -30,7 +32,7 @@ def test_tier_labels_are_written_once_per_tier():
 @pytest.mark.skipif(not SAMPLE.exists(), reason="no stored sample svg")
 def test_the_drawing_is_widened_and_the_fonts_are_remapped():
     original = SAMPLE.read_text()
-    out = d2.inject_tier_labels(original, list(d2.HIERARCHY_TIERS), "#ffffff")
+    out = d2.inject_level_labels(original, list(d2.HIERARCHY_LEVELS), "#ffffff")
     assert "Source Sans 3" in out
     assert "@font-face" not in out
     assert 'font-family: "d2-' not in out
@@ -57,7 +59,7 @@ def test_an_override_file_is_compiled_instead_of_the_generated_one(tmp_path):
     view_dir.mkdir()
     outdir.mkdir()
     (view_dir / "status.d2").write_text(
-        '...@"../output/status.gen.d2"\nU-kernel: { label: "Renamed kernel" }\n'
+        '...@"../output/status.gen.d2"\nunit-kernel: { label: "Renamed kernel" }\n'
     )
     d2.render(got, summary, views.builtin()["status"], outdir, view_dir)
     assert "Renamed kernel" in (outdir / "status.svg").read_text()

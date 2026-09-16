@@ -12,7 +12,7 @@ def emitted(mode="status", **kw):
     return d2.emit(got, summary, replace(view, **kw) if kw else view)
 
 
-def test_the_anchor_chain_covers_every_tier_plus_a_floor():
+def test_the_anchor_chain_covers_every_level_plus_a_floor():
     text = emitted()
     for i in range(6):
         assert f'A{i}: {{ label: ""' in text
@@ -22,26 +22,26 @@ def test_the_anchor_chain_covers_every_tier_plus_a_floor():
 
 def test_a_node_is_pinned_only_where_a_real_edge_would_let_it_drift():
     text = emitted()
-    assert "A0 -> C-system" not in text
-    assert "A4 -> U-kernel" not in text
-    assert "A0 -> S-front" not in text
-    assert "U-kernel -> A5: { style.opacity: 0 }" in text
-    assert "C-system -> A1" not in text
+    assert "A0 -> complete-system" not in text
+    assert "A4 -> unit-kernel" not in text
+    assert "A0 -> system-front" not in text
+    assert "unit-kernel -> A5: { style.opacity: 0 }" in text
+    assert "complete-system -> A1" not in text
 
 
-def test_shapes_and_widths_follow_the_tier():
+def test_shapes_and_widths_follow_the_level():
     text = emitted()
-    assert "shape: oval; width: 290; height: 110" in text
-    assert "shape: hexagon; width: 290" in text
-    assert "shape: rectangle; width: 250" in text
+    assert "shape: oval; width: 330; height: 150" in text
+    assert "shape: hexagon; width: 330" in text
+    assert "shape: rectangle; width: 290" in text
     assert "style.border-radius: 8" in text
 
 
 def test_the_status_label_carries_libraries_and_evidence():
     text = emitted()
     assert "widgetlib" in text
-    assert "evidence D (B)" in text
-    assert "evidence A" in text
+    assert "evidence validation (cross-code)" in text
+    assert "evidence code verification" in text
 
 
 def test_the_reference_view_has_no_labels_no_legend_and_a_white_ground():

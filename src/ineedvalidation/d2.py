@@ -1,7 +1,7 @@
-"""Emit the tiered hierarchy diagram as D2, and drive the rendering binaries.
+"""Emit the levelled hierarchy diagram as D2, and drive the rendering binaries.
 
-The layout is deterministic: one row per tier, uniform boxes, and an invisible
-anchor chain that pins each node to its tier rank from above and below, only
+The layout is deterministic: one row per level, uniform boxes, and an invisible
+anchor chain that pins each node to its level rank from above and below, only
 where its real edges would let it drift.
 """
 
@@ -15,16 +15,16 @@ import textwrap
 from pathlib import Path
 
 from . import views
-from .schema import HIERARCHY_TIERS, NodeSummary, View
+from .schema import HIERARCHY_LEVELS, NodeSummary, View
 
-NODE_W, NODE_H = 250, 110  # px; uniform for every node
+NODE_W, NODE_H = 290, 150  # px; uniform for every node
 FONT_FAMILY = "Source Sans 3"
 
-TIER_LABEL = {
+LEVEL_LABEL = {
     "complete": "Complete\nsystem",
-    "system": "System\ntier",
-    "subsystem": "Subsystem\ntier",
-    "benchmark": "Benchmark\ntier",
+    "system": "System\nlevel",
+    "subsystem": "Subsystem\nlevel",
+    "benchmark": "Benchmark\nlevel",
     "unit": "Unit\nproblems",
 }
 D2_SHAPE = {
@@ -41,12 +41,25 @@ STATUS_EDGE = {
     "in-hand": "#08F7FE",
 }
 LEVEL_FILL = {0: "#000000", 1: "#3a3a3a", 2: "#0b3d16", 3: "#0f6b25", 4: "#22a544"}
+EVIDENCE_BADGE = {
+    "code-verification": "code-ver",
+    "solution-verification": "soln-ver",
+    "cross-code-benchmark": "cross-code",
+    "validation": "validation",
+    "uncertainty-quantification": "uncertainty",
+}
+"""Short display form for a node badge. The legend expands every one of these.
+
+Abbreviating for a drawing is fine because the legend sits beside it; the
+stored vocabulary stays spelled out so the ledger and the marks read plainly.
+"""
+
 EVIDENCE_TEXT = {
-    "A": "A  code verification",
-    "C": "C  solution verification",
-    "B": "B  cross-code benchmark",
-    "D": "D  validation against measurement",
-    "E": "E  uncertainty quantification",
+    "code-verification": "code verification",
+    "solution-verification": "solution verification",
+    "cross-code-benchmark": "cross-code benchmark (never validation)",
+    "validation": "validation against measurement",
+    "uncertainty-quantification": "uncertainty quantification",
 }
 LEVEL_TEXT = {
     0: "0  insufficient evidence",
@@ -64,9 +77,9 @@ def _wrap(text: str, chars: int) -> str:
 
 def _evidence_text(summary: NodeSummary) -> str:
     """The evidence line for a label: demonstrated plain, claimed in parentheses."""
-    parts = list(summary.demonstrated)
+    parts = [EVIDENCE_BADGE.get(k, k) for k in summary.demonstrated]
     if summary.computed:
-        parts += [f"({tier})" for tier in summary.claimed]
+        parts += [f"({EVIDENCE_BADGE.get(k, k)})" for k in summary.claimed]
     return " ".join(parts) or "none"
 
 
@@ -79,14 +92,14 @@ def emit(nodes: dict, summary: dict, view: View) -> str:
         f"vars: {{ d2-config: {{ layout-engine: {view.layout} }} }}",
         f'style.fill: "{bg}"',
     ]
-    tiers = [t for t in HIERARCHY_TIERS if any(n.tier == t for n in nodes.values())]
-    # Rank pinning. Anchor chain A0 -> ... -> A(k): A(i) carries the label of tier i
+    levels = [x for x in HIERARCHY_LEVELS if any(n.level == x for n in nodes.values())]
+    # Rank pinning. Anchor chain A0 -> ... -> A(k): A(i) carries the label of level i
     # and shares its rank with row i; A(k) is a hidden floor. A node is pinned from
-    # above (A(i-1) -> node) when no real parent sits in the tier directly above it,
-    # and from below (node -> A(i+1)) when no real child sits in the tier directly
-    # below it. Together with the real edges this fixes every node to its tier rank
+    # above (A(i-1) -> node) when no real parent sits at the level directly above it,
+    # and from below (node -> A(i+1)) when no real child sits at the level directly
+    # below it. Together with the real edges this fixes every node to its level rank
     # under both layout engines with the fewest invisible edges.
-    depth = len(tiers)
+    depth = len(levels)
     for i in range(depth + 1):
         lines.append(
             f'A{i}: {{ label: ""; shape: rectangle; width: 1; height: 1; '
@@ -98,31 +111,31 @@ def emit(nodes: dict, summary: dict, view: View) -> str:
     highlight = set(view.highlight)
     for nid, node in nodes.items():
         dim = bool(highlight) and not highlight & set(summary[nid].libraries)
-        i = tiers.index(node.tier)
+        i = levels.index(node.level)
         parents = [p for p in node.couples_to if p in nodes]
-        has_parent_above = any(tiers.index(nodes[p].tier) == i - 1 for p in parents)
+        has_parent_above = any(levels.index(nodes[p].level) == i - 1 for p in parents)
         has_child_below = any(
-            tiers.index(nodes[c].tier) == i + 1 for c in children[nid]
+            levels.index(nodes[c].level) == i + 1 for c in children[nid]
         )
-        wrap = 26 if node.tier in ("benchmark", "unit") else 22
+        wrap = 26 if node.level in ("benchmark", "unit") else 22
         label = _wrap(node.title, wrap)
         if dark and "libraries" in view.show:
             label += "\\n" + _wrap(", ".join(summary[nid].libraries), 34)
-        if dark and "tiers" in view.show:
+        if dark and "evidence" in view.show:
             label += "\\nevidence " + _evidence_text(summary[nid])
         fill = LEVEL_FILL[node.validation_level] if dark else bg
         stroke = STATUS_EDGE[node.referent_status] if dark else fg
         width = 3 if dark and node.referent_status != "none" else 2
         box = (
-            NODE_W + 40 if node.tier in ("complete", "system", "subsystem") else NODE_W
+            NODE_W + 40 if node.level in ("complete", "system", "subsystem") else NODE_W
         )
         lines.append(
-            f'{nid}: {{ label: "{label}"; shape: {D2_SHAPE[node.tier]}; '
+            f'{nid}: {{ label: "{label}"; shape: {D2_SHAPE[node.level]}; '
             f"width: {box}; height: {NODE_H}; "
             f'style.fill: "{fill}"; style.stroke: "{stroke}"; '
             f"style.stroke-width: {width}; "
             f'style.font-color: "{fg}"; style.font-size: 15; style.bold: true'
-            + ("; style.border-radius: 8" if node.tier == "benchmark" else "")
+            + ("; style.border-radius: 8" if node.level == "benchmark" else "")
             + ("; style.opacity: 0.25" if dim else "")
             + " }"
         )
@@ -192,9 +205,9 @@ def emit(nodes: dict, summary: dict, view: View) -> str:
             )
         entries.append(f'gap2: {{ label: ""; {cell}; style.opacity: 0 }}')
         entries.append(f'gap3: {{ label: ""; {cell}; style.opacity: 0 }}')
-        for tier, text in EVIDENCE_TEXT.items():
+        for kind, text in EVIDENCE_TEXT.items():
             entries.append(
-                f'e{tier}: {{ label: "evidence {text}"; {cell}; '
+                f'e_{kind.replace("-", "_")}: {{ label: "evidence {text}"; {cell}; '
                 f'style.fill: "{bg}"; style.stroke: "#555555"; '
                 "style.stroke-width: 1; style.stroke-dash: 3 }"
             )
@@ -204,8 +217,8 @@ def emit(nodes: dict, summary: dict, view: View) -> str:
     return "\n".join(lines) + "\n"
 
 
-def inject_tier_labels(svg: str, tiers: list[str], fg: str, margin: int = 230) -> str:
-    """Write each tier label at the left margin of its row, and widen the drawing.
+def inject_level_labels(svg: str, levels: list[str], fg: str, margin: int = 230) -> str:
+    """Write each hierarchy-level label at the left margin of its row.
 
     Rows come from the hidden anchors ``A<i>``. The font faces are pointed at the
     installed family because rsvg-convert cannot read the data-URI faces D2 embeds.
@@ -218,7 +231,7 @@ def inject_tier_labels(svg: str, tiers: list[str], fg: str, margin: int = 230) -
     ]
     left = min(xs) if xs else 0.0
     labels = []
-    for i, tier in enumerate(tiers):
+    for i, level in enumerate(levels):
         cls = base64.b64encode(f"A{i}".encode()).decode()
         found = re.search(
             r'<g class="'
@@ -231,7 +244,7 @@ def inject_tier_labels(svg: str, tiers: list[str], fg: str, margin: int = 230) -
         if not found:
             continue
         y = float(found.group(2)) + float(found.group(3)) / 2
-        rows = TIER_LABEL[tier].split("\n")
+        rows = LEVEL_LABEL[level].split("\n")
         x = left - 40
         tspans = "".join(
             f'<tspan x="{x:.1f}" dy="{0 if j == 0 else 26}">{row}</tspan>'
@@ -336,8 +349,8 @@ def render(nodes, summary, view, outdir, views_dir=None):
         ]
     )
     fg = "#ffffff" if view.mode == "status" else "#000000"
-    tiers = [t for t in HIERARCHY_TIERS if any(n.tier == t for n in nodes.values())]
-    svg.write_text(inject_tier_labels(svg.read_text(), tiers, fg))
+    levels = [x for x in HIERARCHY_LEVELS if any(n.level == x for n in nodes.values())]
+    svg.write_text(inject_level_labels(svg.read_text(), levels, fg))
     png = outdir / f"{view.name}.png"
     background = "black" if view.mode == "status" else "white"
     _run(["rsvg-convert", "-z", "2", "-b", background, "-o", str(png), str(svg)])

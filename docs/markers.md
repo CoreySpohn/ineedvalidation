@@ -2,56 +2,65 @@
 
 A test declares what it demonstrates with one of three decorators. Each is a thin
 wrapper over a pytest marker whose arguments are validated at decoration time, so a
-bad tier or a misspelled keyword fails when the module is imported rather than being
+bad evidence kind or a misspelled keyword fails when the module is imported rather than being
 ignored at collection.
 
 ```python
-import ineedvalidation as inv
+import ineedvalidation as vv
 
 
-@inv.case("free-space-propagation", "A", srq="on-axis intensity")
+@vv.case("free-space-propagation", "code-verification", srq="on-axis intensity")
 def test_matches_closed_form():
     ...
 
 
-@inv.case("free-space-propagation", "C", ref="grid-spacing")
+@vv.case(
+    "free-space-propagation", "solution-verification", refined_parameter="grid-spacing"
+)
 def test_second_order_in_the_step():
     ...
 
 
-@inv.seam("optics", "detector", case="detector-frame")
+@vv.seam("optics", "detector", case="detector-frame")
 def test_photon_scale_anchor():
     ...
 
 
-@inv.regression
+@vv.regression
 def test_frozen_output():
     ...
 ```
 
 ## The arguments
 
-`case` names a physical case as a plain slug. It carries no tier prefix and no
+`case` names a physical case as a plain slug. It carries no level prefix and no
 hierarchy identifier: a node note lists the slugs it owns, so the same slug can be
 exercised by tests in several repositories.
 
-`tier` is the kind of evidence the test produces.
+`evidence` is the kind of evidence the test produces. The kinds are spelled out
+rather than lettered, so a marked test reads without a key and a grep for
+`validation` does not also return every test that merely converges.
 
-| Tier | Meaning |
+| Kind | Meaning |
 |---|---|
-| `A` | Code verification against analytic forms, identities and invariants. |
-| `B` | Cross-code benchmark against an independently developed code. |
-| `C` | Solution verification: convergence in an ordered discretization parameter. |
-| `D` | Validation against measured data. |
+| `code-verification` | Exact solutions, identities, property invariants, sign and seam anchors. |
+| `solution-verification` | Convergence in an ordered discretization parameter. |
+| `cross-code-benchmark` | Agreement with an independently developed code. Never validation. |
+| `validation` | Comparison against measured data, and nothing else. |
+| `uncertainty-quantification` | Segregated aleatory and epistemic propagation; sensitivity analysis. |
 
-Uncertainty quantification is a campaign record on the program, not a property of a
-single test, so it has no marker.
+Note that `cross-code-benchmark` is a kind of evidence, while `benchmark` is also a
+level of the validation hierarchy (hardware with two or three coupled effects). The
+two are unrelated, which is why neither is abbreviated.
 
 `srq` is optional and names the system response quantity the test measures. When the
 declarations are linted against a hierarchy, the value must be one the node lists.
 
-`ref` is optional and reads differently by tier: the independent code for `B`, the
-ordered parameter for `C`, the referent dataset for `D`.
+Three optional keywords each belong to exactly one kind, and using one with the
+wrong kind raises: `reference_code` for a cross-code benchmark, `refined_parameter`
+for solution verification, and `referent` for validation. Each names what it holds,
+so a value filed under the wrong one fails at import rather than sitting unnoticed
+in the ledger.
 
 `seam(producer, consumer, case=...)` marks an absolute-scale anchor test across an
 interface between two libraries. Shape, ratio and fitted-scale tests are scale blind,
@@ -60,12 +69,12 @@ time without any test noticing. The lint checks that the two libraries own nodes
 are actually coupled.
 
 `regression` marks a frozen or golden reference. Such a test is recorded but is
-excluded from every tier, so it cannot inflate the evidence for a case.
+excluded from every kind, so it cannot inflate the evidence for a case.
 
 ## Tagging by path
 
 Tagging every test by hand is not worth the effort when a whole directory exercises
-one case. A table in the repository's `pyproject.toml` assigns a case and a tier by
+one case. A table in the repository's `pyproject.toml` assigns a case and an evidence kind by
 path prefix:
 
 ```toml
@@ -73,8 +82,8 @@ path prefix:
 library = "mylib"
 
 [tool.ineedvalidation.defaults]
-"tests/validation/" = { case = "free-space-propagation", tier = "B" }
-"tests/test_kernels.py" = { case = "kernel-sum", tier = "A" }
+"tests/validation/" = { case = "free-space-propagation", evidence = "cross-code-benchmark" }
+"tests/test_kernels.py" = { case = "kernel-sum", evidence = "code-verification" }
 ```
 
 The longest matching prefix wins. An explicit marker, on the function or in a module
@@ -84,7 +93,7 @@ the evidence file; without it the name of the root directory is used.
 ## Writing the evidence file
 
 ```console
-$ pytest --inv-evidence evidence/mylib.json
+$ pytest --vv-evidence evidence/mylib.json
 ```
 
 The file lists every marked or defaulted test with the outcome it reached:
@@ -92,8 +101,9 @@ The file lists every marked or defaulted test with the outcome it reached:
 ```json
 {"library": "mylib", "commit": "abc1234", "recorded": "2026-09-04T15:00:00Z",
  "tests": [{"nodeid": "tests/test_kernels.py::test_sum", "case": "kernel-sum",
-            "tier": "A", "srq": "summation error", "ref": null, "seam": null,
-            "outcome": "passed", "points": []}]}
+            "evidence": "code-verification", "srq": "summation error",
+            "reference_code": null, "refined_parameter": null, "referent": null,
+            "seam": null, "outcome": "passed"}]}
 ```
 
 Under `--collect-only` every outcome is `null`, which is the cheap way to see what a
@@ -101,4 +111,4 @@ repository claims without running anything. In a real run the outcomes are fille
 and the difference matters: evidence that passed is demonstrated, while evidence that
 was marked and then skipped is only claimed. The package never decides whether a test
 without its reference data should fail or skip; that policy stays with the repository.
-Use `--inv-library` to override the recorded name for one run.
+Use `--vv-library` to override the recorded name for one run.

@@ -6,10 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-HIERARCHY_TIERS = ("complete", "system", "subsystem", "benchmark", "unit")
+HIERARCHY_LEVELS = ("complete", "system", "subsystem", "benchmark", "unit")
+"""Levels of the validation hierarchy (Oberkampf and Roy ch. 10.2).
+
+Note that "benchmark" here is a hierarchy LEVEL, hardware with two or three
+coupled effects. It is unrelated to ``CROSS_CODE_BENCHMARK``, which is a kind
+of evidence. The two senses of the word are why neither is abbreviated.
+"""
+
 REFERENT_STATUS = ("none", "identified", "requested", "in-hand")
 VALIDATION_LEVELS = (0, 1, 2, 3, 4)
-EVIDENCE_ORDER = ("A", "C", "B", "D", "E")
 
 
 def _tuple(value: Any) -> tuple:
@@ -23,10 +29,16 @@ def _tuple(value: Any) -> tuple:
 
 @dataclass(frozen=True)
 class Node:
-    """One case in the validation hierarchy, loaded from a note."""
+    """One case in the validation hierarchy, loaded from a note.
+
+    ``domain_covers`` and ``domain_misses`` come from the note's
+    ``domain_overlap`` mapping: which axes of the real system's domain of
+    operation the referent overlaps, and which it does not. A level-2 claim
+    rests on the covered axes and no others.
+    """
 
     id: str
-    tier: str
+    level: str
     title: str
     couples_to: tuple[str, ...] = ()
     cases: tuple[str, ...] = ()
@@ -36,6 +48,8 @@ class Node:
     validation_level: int = 0
     libraries_planned: tuple[str, ...] = ()
     evidence_declared: tuple[str, ...] = ()
+    domain_covers: tuple[str, ...] = ()
+    domain_misses: tuple[str, ...] = ()
     path: Path | None = None
 
     @classmethod
@@ -43,7 +57,7 @@ class Node:
         """Build a node from a parsed frontmatter mapping."""
         return cls(
             id=data.get("id", ""),
-            tier=data.get("tier", ""),
+            level=data.get("level", ""),
             title=data.get("title", ""),
             couples_to=_tuple(data.get("couples_to")),
             cases=_tuple(data.get("cases")),
@@ -55,6 +69,8 @@ class Node:
                 _tuple(data.get("libraries")) or _tuple(data.get("libraries_planned"))
             ),
             evidence_declared=_tuple(data.get("evidence")),
+            domain_covers=_tuple((data.get("domain_overlap") or {}).get("covers")),
+            domain_misses=_tuple((data.get("domain_overlap") or {}).get("misses")),
             path=path,
         )
 
@@ -65,24 +81,26 @@ class TestRecord:
 
     nodeid: str
     case: str | None = None
-    tier: str | None = None
+    evidence: str | None = None
     srq: str | None = None
-    ref: str | None = None
+    reference_code: str | None = None
+    refined_parameter: str | None = None
+    referent: str | None = None
     seam: tuple[str, str] | None = None
     outcome: str | None = None
-    points: tuple[dict, ...] = ()
 
     def to_dict(self) -> dict:
         """Return the JSON form of the record."""
         return {
             "nodeid": self.nodeid,
             "case": self.case,
-            "tier": self.tier,
+            "evidence": self.evidence,
             "srq": self.srq,
-            "ref": self.ref,
+            "reference_code": self.reference_code,
+            "refined_parameter": self.refined_parameter,
+            "referent": self.referent,
             "seam": list(self.seam) if self.seam else None,
             "outcome": self.outcome,
-            "points": [dict(p) for p in self.points],
         }
 
     @classmethod
@@ -92,12 +110,13 @@ class TestRecord:
         return cls(
             nodeid=data["nodeid"],
             case=data.get("case"),
-            tier=data.get("tier"),
+            evidence=data.get("evidence"),
             srq=data.get("srq"),
-            ref=data.get("ref"),
+            reference_code=data.get("reference_code"),
+            refined_parameter=data.get("refined_parameter"),
+            referent=data.get("referent"),
             seam=tuple(seam) if seam else None,
             outcome=data.get("outcome"),
-            points=tuple(data.get("points") or ()),
         )
 
 
@@ -139,7 +158,6 @@ class NodeSummary:
     demonstrated: tuple[str, ...] = ()
     claimed: tuple[str, ...] = ()
     srqs_covered: tuple[str, ...] = ()
-    refs: tuple[str, ...] = ()
     seams: tuple[tuple[str, str], ...] = ()
     tests: int = 0
     skipped: int = 0
@@ -152,9 +170,8 @@ class View:
 
     name: str
     root: str | None = None
-    depth: str = "all"
     mode: str = "status"
     layout: str = "elk"
-    show: tuple[str, ...] = ("libraries", "tiers")
+    show: tuple[str, ...] = ("libraries", "evidence")
     highlight: tuple[str, ...] = ()
     title: str | None = None

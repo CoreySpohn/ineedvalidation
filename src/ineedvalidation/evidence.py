@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .schema import EVIDENCE_ORDER, EvidenceFile, Node, NodeSummary
+from .marks import EVIDENCE_KINDS
+from .schema import EvidenceFile, Node, NodeSummary
 
 
 def load_dir(directory: Path) -> list[EvidenceFile]:
@@ -19,9 +20,9 @@ def load_dir(directory: Path) -> list[EvidenceFile]:
     ]
 
 
-def _order(tiers) -> tuple[str, ...]:
-    """Sort evidence tiers into the reading order A, C, B, D, E."""
-    return tuple(tier for tier in EVIDENCE_ORDER if tier in tiers)
+def _reading_order(kinds) -> tuple[str, ...]:
+    """Sort evidence kinds into EVIDENCE_KINDS order, not alphabetical order."""
+    return tuple(kind for kind in EVIDENCE_KINDS if kind in kinds)
 
 
 def summarize(
@@ -42,7 +43,7 @@ def summarize(
             summaries[nid] = NodeSummary(
                 node_id=nid,
                 libraries=node.libraries_planned,
-                demonstrated=_order(node.evidence_declared),
+                demonstrated=_reading_order(node.evidence_declared),
                 computed=False,
             )
             continue
@@ -50,19 +51,16 @@ def summarize(
         claimed: set[str] = set()
         libraries: list[str] = []
         srqs: list[str] = []
-        refs: list[str] = []
         seams: list[tuple[str, str]] = []
         skipped = 0
         for library, record in rows:
             if library not in libraries:
                 libraries.append(library)
-            if record.tier:
+            if record.evidence:
                 target = demonstrated if record.outcome == "passed" else claimed
-                target.add(record.tier)
+                target.add(record.evidence)
             if record.srq and record.srq not in srqs:
                 srqs.append(record.srq)
-            if record.ref and record.ref not in refs:
-                refs.append(record.ref)
             if record.seam and record.seam not in seams:
                 seams.append(record.seam)
             if record.outcome in ("skipped", "xfailed"):
@@ -70,10 +68,9 @@ def summarize(
         summaries[nid] = NodeSummary(
             node_id=nid,
             libraries=tuple(libraries),
-            demonstrated=_order(demonstrated),
-            claimed=_order(claimed - demonstrated),
+            demonstrated=_reading_order(demonstrated),
+            claimed=_reading_order(claimed - demonstrated),
             srqs_covered=tuple(srqs),
-            refs=tuple(refs),
             seams=tuple(seams),
             tests=len(rows),
             skipped=skipped,

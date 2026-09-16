@@ -13,7 +13,7 @@ def builtin() -> dict[str, View]:
     """The two views that reproduce the default reference and status figures."""
     return {
         "reference": View(name="reference", mode="reference", show=()),
-        "status": View(name="status", mode="status", show=("libraries", "tiers")),
+        "status": View(name="status", mode="status", show=("libraries", "evidence")),
     }
 
 
@@ -24,10 +24,9 @@ def load(path: Path) -> View:
     return View(
         name=data.get("name", path.stem),
         root=data.get("root"),
-        depth=data.get("depth", "all"),
         mode=data.get("mode", "status"),
         layout=data.get("layout", "elk"),
-        show=tuple(data.get("show", ("libraries", "tiers"))),
+        show=tuple(data.get("show", ("libraries", "evidence"))),
         highlight=tuple(data.get("highlight", ())),
         title=data.get("title"),
     )

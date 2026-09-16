@@ -6,9 +6,9 @@ from pathlib import Path
 
 import yaml
 
+from .marks import EVIDENCE_KINDS
 from .schema import (
-    EVIDENCE_ORDER,
-    HIERARCHY_TIERS,
+    HIERARCHY_LEVELS,
     REFERENT_STATUS,
     VALIDATION_LEVELS,
     Node,
@@ -45,7 +45,7 @@ def subtree(nodes: dict[str, Node], root: str) -> dict[str, Node]:
 
 
 def _evidence_for(node: Node, summary: dict | None) -> tuple[str, ...]:
-    """Demonstrated tiers when a summary covers the node, else the declared list."""
+    """Demonstrated evidence kinds when a summary covers the node, else declared."""
     if summary is not None and node.id in summary and summary[node.id].computed:
         return summary[node.id].demonstrated
     return node.evidence_declared
@@ -80,17 +80,21 @@ def lint(
     for nid, node in nodes.items():
         if node.path is not None and node.path.stem != nid:
             problems.append(f"{nid}: file name {node.path.name} does not match id")
-        if node.tier not in HIERARCHY_TIERS:
-            problems.append(f"{nid}: unknown tier {node.tier}")
+        if node.level not in HIERARCHY_LEVELS:
+            problems.append(f"{nid}: unknown hierarchy level {node.level}")
             continue
+        if not nid.startswith(f"{node.level}-"):
+            problems.append(
+                f"{nid}: id does not start with its level, expected {node.level}-"
+            )
         for parent in node.couples_to:
             if parent not in nodes:
                 problems.append(f"{nid}: couples_to {parent} does not exist")
-            elif HIERARCHY_TIERS.index(nodes[parent].tier) >= HIERARCHY_TIERS.index(
-                node.tier
+            elif HIERARCHY_LEVELS.index(nodes[parent].level) >= HIERARCHY_LEVELS.index(
+                node.level
             ):
-                problems.append(f"{nid}: couples_to {parent} is not in a higher tier")
-        if node.tier != "complete" and not node.couples_to:
+                problems.append(f"{nid}: couples_to {parent} is not at a higher level")
+        if node.level != "complete" and not node.couples_to:
             problems.append(f"{nid}: no couples_to edge")
         if library_text is not None:
             for lib in node.libraries_planned:
@@ -107,18 +111,28 @@ def lint(
                 f"{nid}: validation_level {level} not in {list(VALIDATION_LEVELS)}"
             )
             continue
-        for tier in node.evidence_declared:
-            if tier not in EVIDENCE_ORDER:
-                problems.append(f"{nid}: evidence {tier} not in {list(EVIDENCE_ORDER)}")
+        for kind in node.evidence_declared:
+            if kind not in EVIDENCE_KINDS:
+                problems.append(f"{nid}: evidence {kind} not in {list(EVIDENCE_KINDS)}")
         if level >= 2 and node.referent_status != "in-hand":
             problems.append(
                 f"{nid}: validation_level {level} claimed without a referent in hand"
             )
-        if level >= 2 and "D" not in _evidence_for(node, summary):
+        if level >= 2 and "validation" not in _evidence_for(node, summary):
             problems.append(
-                f"{nid}: validation_level {level} claimed without Tier D evidence"
+                f"{nid}: validation_level {level} claimed without validation evidence"
             )
-        if level >= 3 and node.tier != "complete":
+        both = set(node.domain_covers) & set(node.domain_misses)
+        if both:
+            problems.append(
+                f"{nid}: domain_overlap lists {sorted(both)} as both covered and missed"
+            )
+        if level >= 2 and not node.domain_covers:
+            problems.append(
+                f"{nid}: validation_level {level} claimed without domain_overlap "
+                "naming the axes the referent covers"
+            )
+        if level >= 3 and node.level != "complete":
             problems.append(
                 f"{nid}: validation_level {level} needs measurements on the "
                 "real system (Table 9)"

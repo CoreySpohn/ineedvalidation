@@ -1,8 +1,7 @@
 name: branch
-root: SS-mixer
-depth: all
+root: subsystem-mixer
 mode: status
 layout: elk
-show: [libraries, tiers]
+show: [libraries, evidence]
 highlight: [widgetlib]
 title: Mixer branch

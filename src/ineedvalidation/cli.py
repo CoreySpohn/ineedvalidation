@@ -6,11 +6,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from ineedvalidation import __version__, d2, evidence, nodes, views
-from ineedvalidation.schema import HIERARCHY_TIERS
+from ineedvalidation.schema import HIERARCHY_LEVELS
 
 STUB = """---
 id: {stub_id}
-tier: ''
+level: ''
 title: {case}
 couples_to: []
 cases:
@@ -22,7 +22,7 @@ validation_level: 0
 ---
 # {case}
 
-Stub written by ineedvalidation scaffold. Fill in the tier, the coupling, the
+Stub written by ineedvalidation scaffold. Fill in the level, the coupling, the
 system response quantities and the referent, then delete this line.
 """
 
@@ -82,8 +82,8 @@ def _lint(args):
     for problem in problems:
         print("LINT:", problem)
     census = ", ".join(
-        f"{tier}={sum(node.tier == tier for node in loaded.values())}"
-        for tier in HIERARCHY_TIERS
+        f"{level}={sum(node.level == level for node in loaded.values())}"
+        for level in HIERARCHY_LEVELS
     )
     print(f"{len(loaded)} nodes, {census}")
     return 1 if problems else 0

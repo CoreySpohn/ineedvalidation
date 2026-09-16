@@ -2,47 +2,54 @@
 
 import pytest
 
-import ineedvalidation as inv
+import ineedvalidation as vv
 
 pytest_plugins = ["pytester"]
 
 
-def test_case_rejects_bad_tier():
+def test_case_rejects_an_unknown_evidence_kind():
     with pytest.raises(ValueError):
-        inv.case("some-case", "E")
+        vv.case("some-case", "not-a-kind")
 
 
 def test_case_rejects_empty_slug():
     with pytest.raises(TypeError):
-        inv.case("", "A")
+        vv.case("", "code-verification")
 
 
 def test_seam_needs_two_names():
     with pytest.raises(TypeError):
-        inv.seam("producer", "")
+        vv.seam("producer", "")
 
 
 def test_case_mark_carries_arguments():
-    mark = inv.case("some-case", "B", srq="contrast", ref="other-code").mark
-    assert mark.name == "inv_case"
-    assert mark.args == ("some-case", "B")
-    assert mark.kwargs == {"srq": "contrast", "ref": "other-code"}
+    mark = vv.case(
+        "some-case", "cross-code-benchmark", srq="contrast", reference_code="other-code"
+    ).mark
+    assert mark.name == "vv_case"
+    assert mark.args == ("some-case", "cross-code-benchmark")
+    assert mark.kwargs == {
+        "srq": "contrast",
+        "reference_code": "other-code",
+        "refined_parameter": None,
+        "referent": None,
+    }
 
 
 def test_markers_registered_under_strict_markers(pytester):
     pytester.makepyfile(
         """
-        import ineedvalidation as inv
+        import ineedvalidation as vv
 
-        @inv.case("some-case", "A", srq="flux")
+        @vv.case("some-case", "code-verification", srq="flux")
         def test_one():
             pass
 
-        @inv.seam("producer", "consumer")
+        @vv.seam("producer", "consumer")
         def test_two():
             pass
 
-        @inv.regression
+        @vv.regression
         def test_three():
             pass
         """

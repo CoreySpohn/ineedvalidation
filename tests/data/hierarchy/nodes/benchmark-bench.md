@@ -1,9 +1,9 @@
 ---
-id: B-bench
-tier: benchmark
+id: benchmark-bench
+level: benchmark
 title: Bench loop closure
 couples_to:
-- SS-mixer
+- subsystem-mixer
 cases:
 - bench-loop
 libraries:
@@ -13,9 +13,15 @@ srqs:
 referent: bench loop data
 referent_status: in-hand
 evidence:
-- A
-- D
+- code-verification
+- validation
 validation_level: 2
+domain_overlap:
+  covers:
+  - loop-bandwidth
+  - actuator-count
+  misses:
+  - residual-amplitude
 ---
 # Bench loop closure
 

@@ -1,9 +1,9 @@
 ---
-id: U-kernel
-tier: unit
+id: unit-kernel
+level: unit
 title: Kernel summation
 couples_to:
-- B-bench
+- benchmark-bench
 cases:
 - kernel-sum
 libraries:
@@ -13,7 +13,7 @@ srqs:
 referent: a closed form sum
 referent_status: in-hand
 evidence:
-- A
+- code-verification
 validation_level: 1
 ---
 # Kernel summation

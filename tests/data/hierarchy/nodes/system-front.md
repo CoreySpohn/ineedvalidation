@@ -1,9 +1,9 @@
 ---
-id: S-front
-tier: system
+id: system-front
+level: system
 title: Front end response
 couples_to:
-- C-system
+- complete-system
 cases:
 - front-end
 libraries:
@@ -13,7 +13,7 @@ srqs:
 referent: a front end rig
 referent_status: identified
 evidence:
-- A
+- code-verification
 validation_level: 1
 ---
 # Front end response

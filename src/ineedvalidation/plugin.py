@@ -18,16 +18,18 @@ from ineedvalidation.schema import EvidenceFile, TestRecord
 
 MARKER_HELP = {
     MARK_CASE: (
-        "inv_case(slug, tier, srq=None, ref=None): the physical case, evidence "
-        "tier and system response quantity a test exercises (use ineedvalidation.case)"
+        "vv_case(slug, evidence, srq=None, reference_code=None, "
+        "refined_parameter=None, referent=None): the physical case, kind of "
+        "evidence and system response quantity a test exercises "
+        "(use ineedvalidation.case)"
     ),
     MARK_SEAM: (
-        "inv_seam(producer, consumer, case=None): an absolute-scale anchor test "
+        "vv_seam(producer, consumer, case=None): an absolute-scale anchor test "
         "across a producer/consumer interface (use ineedvalidation.seam)"
     ),
     MARK_REGRESSION: (
-        "inv_regression: a frozen or golden reference, excluded from every "
-        "evidence tier (use ineedvalidation.regression)"
+        "vv_regression: a frozen or golden reference, claiming no kind of "
+        "evidence (use ineedvalidation.regression)"
     ),
 }
 
@@ -36,14 +38,14 @@ def pytest_addoption(parser):
     """Register the evidence output options."""
     group = parser.getgroup("ineedvalidation")
     group.addoption(
-        "--inv-evidence",
+        "--vv-evidence",
         action="store",
         default=None,
         metavar="PATH",
         help="write the collected validation evidence to this JSON file",
     )
     group.addoption(
-        "--inv-library",
+        "--vv-library",
         action="store",
         default=None,
         metavar="NAME",
@@ -55,8 +57,8 @@ def pytest_configure(config):
     """Register the markers and, when asked, the evidence collector."""
     for name, text in MARKER_HELP.items():
         config.addinivalue_line("markers", f"{name}: {text}")
-    if config.getoption("--inv-evidence"):
-        config.pluginmanager.register(EvidenceCollector(config), "inv-evidence")
+    if config.getoption("--vv-evidence"):
+        config.pluginmanager.register(EvidenceCollector(config), "vv-evidence")
 
 
 def load_settings(rootdir):
@@ -119,7 +121,7 @@ class EvidenceCollector:
         self.records = {}
         library, self.defaults = load_settings(config.rootpath)
         self.library = (
-            config.getoption("--inv-library") or library or config.rootpath.name
+            config.getoption("--vv-library") or library or config.rootpath.name
         )
 
     def pytest_collection_modifyitems(self, items):
@@ -134,23 +136,37 @@ class EvidenceCollector:
         case_mark = item.get_closest_marker(MARK_CASE)
         seam_mark = item.get_closest_marker(MARK_SEAM)
         regression = item.get_closest_marker(MARK_REGRESSION) is not None
-        case = tier = srq = ref = seam = None
+        case = evidence = srq = seam = None
+        reference_code = refined_parameter = referent = None
         if case_mark is not None:
-            case, tier = case_mark.args[0], case_mark.args[1]
-            srq, ref = case_mark.kwargs.get("srq"), case_mark.kwargs.get("ref")
+            case, evidence = case_mark.args[0], case_mark.args[1]
+            srq = case_mark.kwargs.get("srq")
+            reference_code = case_mark.kwargs.get("reference_code")
+            refined_parameter = case_mark.kwargs.get("refined_parameter")
+            referent = case_mark.kwargs.get("referent")
         elif seam_mark is None and not regression:
             values = match_default(Path(item.location[0]).as_posix(), self.defaults)
             if values is None:
                 return None
-            case, tier = values.get("case"), values.get("tier")
-            srq, ref = values.get("srq"), values.get("ref")
+            case, evidence = values.get("case"), values.get("evidence")
+            srq = values.get("srq")
+            reference_code = values.get("reference_code")
+            refined_parameter = values.get("refined_parameter")
+            referent = values.get("referent")
         if seam_mark is not None:
             seam = (seam_mark.args[0], seam_mark.args[1])
             case = seam_mark.kwargs.get("case") or case
         if regression:
-            tier = None
+            evidence = None
         return TestRecord(
-            nodeid=item.nodeid, case=case, tier=tier, srq=srq, ref=ref, seam=seam
+            nodeid=item.nodeid,
+            case=case,
+            evidence=evidence,
+            srq=srq,
+            reference_code=reference_code,
+            refined_parameter=refined_parameter,
+            referent=referent,
+            seam=seam,
         )
 
     def pytest_runtest_logreport(self, report):
@@ -164,7 +180,7 @@ class EvidenceCollector:
 
     def pytest_sessionfinish(self, session, exitstatus):
         """Write the evidence file."""
-        target = Path(self.config.getoption("--inv-evidence"))
+        target = Path(self.config.getoption("--vv-evidence"))
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = EvidenceFile(
             library=self.library,

@@ -16,21 +16,20 @@ def test_load_dir_reads_every_evidence_file():
 
 
 def test_summarize_separates_demonstrated_from_claimed():
-    bench = summary()["B-bench"]
-    assert bench.demonstrated == ("D",)
-    assert bench.claimed == ("B",)
+    bench = summary()["benchmark-bench"]
+    assert bench.demonstrated == ("validation",)
+    assert bench.claimed == ("cross-code-benchmark",)
     assert bench.libraries == ("widgetlib",)
     assert bench.srqs_covered == ("loop residual",)
-    assert bench.refs == ("bench-2026", "othercode")
     assert bench.tests == 2
     assert bench.skipped == 1
     assert bench.computed is True
 
 
 def test_a_node_with_no_tests_falls_back_to_the_declared_fields():
-    front = summary()["S-front"]
+    front = summary()["system-front"]
     assert front.computed is False
-    assert front.demonstrated == ("A",)
+    assert front.demonstrated == ("code-verification",)
     assert front.libraries == ("widgetlib",)
 
 

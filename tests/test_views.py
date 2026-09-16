@@ -9,19 +9,19 @@ def test_builtin_views_cover_reference_and_status():
     assert set(built) == {"reference", "status"}
     assert built["reference"].mode == "reference"
     assert built["reference"].show == ()
-    assert built["status"].show == ("libraries", "tiers")
+    assert built["status"].show == ("libraries", "evidence")
 
 
 def test_a_view_file_loads_with_its_fields():
     view = views.load(HIER / "views" / "branch.yaml")
     assert view.name == "branch"
-    assert view.root == "SS-mixer"
+    assert view.root == "subsystem-mixer"
     assert view.highlight == ("widgetlib",)
     assert view.title == "Mixer branch"
 
 
 def test_resolve_prefers_a_file_over_a_builtin():
-    assert views.resolve("branch", HIER / "views").root == "SS-mixer"
+    assert views.resolve("branch", HIER / "views").root == "subsystem-mixer"
     assert views.resolve("status", HIER / "views").root is None
 
 
