@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/CoreySpohn/ineedvalidation/compare/v0.0.1...v1.0.0) (2026-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* spell out evidence kinds and rename the marker namespace and pytest flags to vv
+
+### Features
+
+* spell out evidence kinds and rename the marker namespace and pytest flags to vv ([de36aad](https://github.com/CoreySpohn/ineedvalidation/commit/de36aad33e714aceed7a9a76a7fec8f90f0bad25))
+
 ## 0.0.1 (2026-09-11)
 
 
