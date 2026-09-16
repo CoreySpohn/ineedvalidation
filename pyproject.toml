@@ -10,7 +10,7 @@ dynamic = ['readme', 'version']
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: Pytest",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",

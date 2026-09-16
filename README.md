@@ -73,7 +73,3 @@ $ ineedvalidation render hierarchy/
 ```
 
 The hierarchy is a directory holding `nodes/` (one Markdown note with YAML frontmatter per node, listing the cases it owns under `cases:`), `evidence/` (the ledgers) and optionally `views/`; `--nodes` and `--evidence` point elsewhere. The lint checks the notes for internal consistency and checks them against the collected tests in both directions: a case no node owns, a node with no tests, a response quantity a node does not list, or a validation level claimed without a passing test that supports it. `scaffold` writes a stub note for every case a test names that no node owns. The renderer draws the levelled figure through `d2`, with named views (`--view`, `--all-views`), a single branch (`--root`) and optional hand-edited overrides for figures that have to look right in a talk.
-
-## Status
-
-Pre-alpha. The markers, the evidence collector, the hierarchy lint, the scaffolder and the renderer work; the API is not yet stable.
