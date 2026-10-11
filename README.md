@@ -91,6 +91,9 @@ $ pytest --vv-evidence evidence/mylib.json
 
 One JSON file per repository lists every marked or defaulted test with its case, kind of evidence, response quantity, seam and the outcome it reached, stamped with the commit. The library name comes from `--vv-library NAME`, else `library` in the settings file (`[tool.ineedvalidation]` in `pyproject.toml` or top-level in `ineedvalidation.toml`), else the rootdir name.
 
+See the [marker guide](docs/markers.md) for `basis` and `acceptance`, `vv_record`,
+pytest-xdist collection and `lint --require-metadata`.
+
 ## Linting, scaffolding and rendering a hierarchy
 
 ```console

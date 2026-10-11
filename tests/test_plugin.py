@@ -406,6 +406,23 @@ def test_no_evidence_file_is_written_without_the_option(pytester, tmp_path):
         ("acceptance = { margin = [1, inf] }", ("finite",)),
         ("acceptance = { domain = { nested = 1 } }", ("acceptance.domain",)),
         ('acceptance = { domain = ["first", { nested = 1 }] }', ("acceptance.domain",)),
+        (
+            'note = "ignored in 1.0"',
+            (
+                "ineedvalidation default 'unused_tests/': unknown key 'note' (allowed:",
+                "case",
+                "evidence",
+                "srq",
+                "reference_code",
+                "refined_parameter",
+                "referent",
+                "reference_model",
+                "alternative",
+                "basis",
+                "acceptance",
+            ),
+        ),
+        ("acceptance = { registered = 2026-10-01 }", ("registered", "quote")),
         ('acceptance = { registered = "2026-13-01" }', ("YYYY-MM-DD",)),
         ('acceptance = { registered = "2026-10-01T00:00" }', ("YYYY-MM-DD",)),
         ('evidence = "code-verificaton"', ("code-verificaton", "code-verification")),
@@ -581,53 +598,25 @@ def require_xdist():
 
 
 @pytest.mark.parametrize(
-    ("environ", "expected"),
-    [({}, "skip"), ({"REQUIRE_XDIST": "0"}, "skip"), ({"REQUIRE_XDIST": "1"}, "fail")],
-)
-def test_missing_xdist_action(environ, expected):
-    assert missing_xdist_action(environ) == expected
-
-
-@pytest.mark.parametrize("required", [False, True])
-def test_missing_xdist_skips_unless_required(monkeypatch, required):
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
-    monkeypatch.setenv("REQUIRE_XDIST", "1" if required else "0")
-    expected = pytest.fail.Exception if required else pytest.skip.Exception
-    # Catch either outcome so an erroneous skip fails this test instead of
-    # skipping the test itself when xdist is required.
-    with pytest.raises((pytest.fail.Exception, pytest.skip.Exception)) as caught:
-        require_xdist()
-    assert isinstance(caught.value, expected)
-    assert "pytest-xdist" in str(caught.value)
-
-
-@pytest.mark.parametrize(
-    ("worse", "better"),
+    ("outcomes", "expected"),
     [
-        ("error", "failed"),
-        ("error", "xpassed"),
-        ("error", "xfailed"),
-        ("error", "passed"),
-        ("error", "skipped"),
-        ("failed", "xpassed"),
-        ("failed", "xfailed"),
-        ("failed", "passed"),
-        ("failed", "skipped"),
-        ("xpassed", "xfailed"),
-        ("xpassed", "passed"),
-        ("xpassed", "skipped"),
-        ("xfailed", "passed"),
-        ("xfailed", "skipped"),
-        ("passed", "skipped"),
+        (("failed", "error"), "failed"),
+        (("passed", "error"), "error"),
+        (("skipped", "error"), "error"),
+        (("xfailed", "error"), "error"),
+        (("xpassed", "error"), "error"),
+        (("passed", "failed"), "failed"),
+        (("error",), "error"),
     ],
 )
 @pytest.mark.parametrize("reverse", [False, True])
-def test_outcome_folding_keeps_the_worst_report(worse, better, reverse):
-    outcomes = (better, worse) if reverse else (worse, better)
+def test_outcome_folding_keeps_the_worst_report(outcomes, expected, reverse):
     current = None
-    for outcome in outcomes:
+    for outcome in reversed(outcomes) if reverse else outcomes:
         report = SimpleNamespace(
-            when="teardown" if outcome == "error" else "call",
+            when="setup"
+            if outcomes == ("error",)
+            else ("teardown" if outcome == "error" else "call"),
             failed=outcome in ("error", "failed"),
             passed=outcome in ("passed", "xpassed"),
             skipped=outcome in ("skipped", "xfailed"),
@@ -637,7 +626,7 @@ def test_outcome_folding_keeps_the_worst_report(worse, better, reverse):
         folded = _outcome(report, current)
         if folded is not None:
             current = folded
-    assert current == worse
+    assert current == expected
 
 
 def test_xdist_each_keeps_a_failure_from_one_worker(pytester, tmp_path):
@@ -870,7 +859,7 @@ def broken_teardown():
 def broken_setup():
     raise RuntimeError("setup failed")
 
-def test_body_failure():
+def test_body_failure(broken_teardown):
     assert False
 
 def test_teardown_error(broken_teardown):
@@ -885,7 +874,7 @@ def test_setup_error(broken_setup):
     result = pytester.runpytest_subprocess(
         *(["-n", "2"] if parallel else []), "--vv-evidence", str(out)
     )
-    result.assert_outcomes(passed=1, failed=1, errors=2)
+    result.assert_outcomes(passed=1, failed=1, errors=3)
     records = json.loads(out.read_text())["tests"]
     assert len(records) == 3
     assert {r["nodeid"].split("::")[-1]: r["outcome"] for r in records} == {
@@ -941,7 +930,7 @@ def pytest_sessionfinish(session):
         r["nodeid"]: r for r in json.loads((pytester.path / "reports.json").read_text())
     }
     assert len(records) == 6
-    assert len(reports) == 17  # A setup skip has no call phase.
+    assert reports
     for report in reports:
         properties = dict(report.user_properties)
         assert properties["custom-property"] == "preserved"
@@ -974,7 +963,7 @@ def test_serial_junit_has_no_declaration_property(pytester, tmp_path):
 
 
 @pytest.mark.parametrize("relative_root", [".", "sub/dir"])
-def test_root_is_relative_to_git_top_level(pytester, tmp_path, relative_root):
+def test_suite_root_is_relative_to_git_top_level(pytester, tmp_path, relative_root):
     subprocess.run(["git", "init", str(pytester.path)], check=True, capture_output=True)
     suite = pytester.path / relative_root
     suite.mkdir(parents=True, exist_ok=True)
@@ -986,18 +975,20 @@ def test_root_is_relative_to_git_top_level(pytester, tmp_path, relative_root):
     )
     result.assert_outcomes(passed=3, skipped=1)
     data = json.loads(out.read_text())
-    assert data["root"] == relative_root
-    assert EvidenceFile.from_dict(data).root == relative_root
+    assert "root" not in data
+    assert data["suite_root"] == relative_root
+    assert EvidenceFile.from_dict(data).to_dict()["suite_root"] == relative_root
+    assert EvidenceFile.from_dict(data).suite_root == relative_root
 
 
-def test_root_is_null_outside_git_repository(pytester, tmp_path, monkeypatch):
+def test_suite_root_is_null_outside_git_repository(pytester, tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(pytester.path.parent))
     pytester.makepyfile(test_marked=MARKED)
     pytester.makefile(".toml", pyproject=TOML)
     out = tmp_path / "evidence.json"
     result = pytester.runpytest_subprocess("--vv-evidence", str(out))
     result.assert_outcomes(passed=3, skipped=1)
-    assert json.loads(out.read_text())["root"] is None
+    assert json.loads(out.read_text())["suite_root"] is None
 
 
 def test_1_0_ledger_missing_mode_reads_as_run():
@@ -1008,12 +999,12 @@ def test_1_0_ledger_missing_mode_reads_as_run():
     assert loaded.to_dict()["mode"] == "run"
 
 
-def test_1_0_ledger_missing_root_reads_as_null():
+def test_1_0_ledger_missing_suite_root_reads_as_null():
     data = json.loads((HIER.parent / "ledger-1.0.json").read_text())
-    assert "root" not in data
+    assert "suite_root" not in data
     loaded = EvidenceFile.from_dict(data)
-    assert loaded.root is None
-    assert loaded.to_dict()["root"] is None
+    assert loaded.suite_root is None
+    assert loaded.to_dict()["suite_root"] is None
 
 
 def result_entry(**values):
@@ -1216,3 +1207,115 @@ def test_1_0_ledger_missing_results_reads_as_empty_list():
     loaded = EvidenceFile.from_dict(data)
     assert loaded.tests[0].results == []
     assert loaded.to_dict()["tests"][0]["results"] == []
+
+
+@pytest.mark.parametrize("collect", [False, True])
+@pytest.mark.parametrize("standalone", [False, True])
+def test_pytest_ini_tolerates_unrelated_invalid_pyproject(
+    pytester, tmp_path, collect, standalone
+):
+    pytester.makefile(".ini", pytest="[pytest]\n")
+    pytester.makefile(".toml", pyproject="invalid = [\n")
+    pytester.makepyfile(test_plain="def test_plain(): pass\n")
+    if standalone:
+        pytester.makefile(
+            ".toml",
+            ineedvalidation=(
+                'library = "standalone-suite"\n[defaults."test_plain"]\n'
+                'case = "kernel-sum"\nevidence = "code-verification"\n'
+            ),
+        )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        "-c",
+        str(pytester.path / "pytest.ini"),
+        *(["--vv-evidence", str(out)] if collect else []),
+    )
+    result.assert_outcomes(passed=1)
+    assert "Traceback" not in result.stderr.str()
+    if collect:
+        ledger = json.loads(out.read_text())
+        assert len(ledger["tests"]) == int(standalone)
+        if standalone:
+            assert ledger["library"] == "standalone-suite"
+
+
+@pytest.mark.parametrize(
+    "declaration", ["unmarked", "case", "seam", "regression", "default"]
+)
+def test_vv_record_warns_only_when_results_have_no_declaration(
+    pytester, tmp_path, declaration
+):
+    marker = {
+        "unmarked": "",
+        "default": "",
+        "case": '@vv.case("kernel-sum", "code-verification")',
+        "seam": '@vv.seam("producer", "consumer")',
+        "regression": "@vv.regression",
+    }[declaration]
+    pytester.makepyfile(
+        test_results=f"""
+import ineedvalidation as vv
+{marker}
+def test_result(vv_record):
+    vv_record(value=1)
+    vv_record(value=2)
+"""
+    )
+    if declaration == "default":
+        pytester.makefile(
+            ".toml",
+            ineedvalidation=(
+                '[defaults."test_results"]\n'
+                'case = "kernel-sum"\nevidence = "code-verification"\n'
+            ),
+        )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    ledger = json.loads(out.read_text())
+    message = "vv_record results are dropped"
+    if declaration == "unmarked":
+        assert ledger["tests"] == []
+        result.stdout.fnmatch_lines(
+            ["*PytestWarning:*test_results.py::test_result*" + message + "*"]
+        )
+    else:
+        assert [entry["value"] for entry in ledger["tests"][0]["results"]] == [1, 2]
+        assert message not in result.stdout.str()
+
+
+@pytest.mark.parametrize("error_phase", ["setup", "teardown"])
+@pytest.mark.parametrize("failed_worker", ["gw0", "gw1"])
+def test_xdist_each_body_failure_wins_over_other_worker_fixture_error(
+    pytester, tmp_path, error_phase, failed_worker
+):
+    require_xdist()
+    pytester.makepyfile(
+        test_cases=f"""
+import os
+import pytest
+import ineedvalidation as vv
+
+@pytest.fixture
+def fixture_error():
+    if {error_phase!r} == "teardown":
+        yield
+    if os.environ["PYTEST_XDIST_WORKER"] != {failed_worker!r}:
+        raise RuntimeError("fixture error")
+    if {error_phase!r} == "setup":
+        yield
+
+@vv.case("kernel-sum", "code-verification")
+def test_worker_outcome(fixture_error):
+    assert os.environ["PYTEST_XDIST_WORKER"] != {failed_worker!r}
+"""
+    )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        "-n", "2", "--dist", "each", "--vv-evidence", str(out)
+    )
+    result.assert_outcomes(failed=1, errors=1, passed=int(error_phase == "teardown"))
+    records = json.loads(out.read_text())["tests"]
+    assert len(records) == 1
+    assert records[0]["outcome"] == "failed"

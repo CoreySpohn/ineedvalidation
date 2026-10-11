@@ -143,3 +143,28 @@ def test_case_rejects_invalid_acceptance(acceptance, exception, message):
 def test_case_preserves_empty_acceptance_values(acceptance):
     mark = vv.case("some-case", "code-verification", acceptance=acceptance).mark
     assert mark.kwargs["acceptance"] == acceptance
+
+
+def test_public_metadata_vocabularies_support_star_import():
+    namespace = {}
+    exec("from ineedvalidation import *", namespace)
+    assert namespace["BASES"] == EXPECTED_BASES
+    assert namespace["ACCEPTANCE_KEYS"] == (
+        "metric",
+        "tolerance",
+        "margin",
+        "rule",
+        "domain",
+        "draws",
+        "sigma",
+        "reference_error",
+        "registered",
+    )
+    mark = namespace["case"](
+        "some-case",
+        "code-verification",
+        basis=namespace["BASES"][0],
+        acceptance={namespace["ACCEPTANCE_KEYS"][0]: "absolute error"},
+    ).mark
+    assert mark.kwargs["basis"] == "floating-point"
+    assert mark.kwargs["acceptance"] == {"metric": "absolute error"}

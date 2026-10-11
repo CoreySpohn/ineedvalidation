@@ -164,14 +164,18 @@ def test_all_views_includes_the_view_files(tmp_path):
     assert (hierarchy / "output" / "branch.gen.d2").exists()
 
 
-def test_lint_require_metadata_prints_exactly_three_lines_and_returns_one(capsys):
+def test_lint_require_metadata_prints_three_problems_and_census_and_returns_one(capsys):
     assert cli.main(["lint", str(METADATA_HIER), "--require-metadata"]) == 1
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out == "".join(
-        f"LINT: {problem}\n" for problem in METADATA_PROBLEMS
+    lint_lines = [
+        line for line in captured.out.splitlines() if line.startswith("LINT:")
+    ]
+    assert lint_lines == [f"LINT: {problem}" for problem in METADATA_PROBLEMS]
+    assert len(lint_lines) == 3
+    assert captured.out.endswith(
+        "1 nodes, complete=1, system=0, subsystem=0, benchmark=0, unit=0\n"
     )
-    assert len(captured.out.splitlines()) == 3
 
 
 def test_plain_lint_ignores_metadata_defects_and_returns_zero(capsys):
@@ -181,3 +185,61 @@ def test_plain_lint_ignores_metadata_defects_and_returns_zero(capsys):
     assert captured.out == (
         "1 nodes, complete=1, system=0, subsystem=0, benchmark=0, unit=0\n"
     )
+
+
+@pytest.mark.parametrize("duplicate_owner", [False, True])
+@pytest.mark.parametrize("include_run", [False, True])
+def test_plain_lint_collect_only_does_not_affect_status_or_case_ownership(
+    tmp_path, capsys, duplicate_owner, include_run
+):
+    import json
+
+    hierarchy = tmp_path / "hierarchy"
+    shutil.copytree(METADATA_HIER, hierarchy)
+    (ledger_path,) = (hierarchy / "evidence").glob("*.json")
+    data = json.loads(ledger_path.read_text())
+    if include_run:
+        (ledger_path.parent / "run.json").write_text(json.dumps(data))
+    data["mode"] = "collect-only"
+    data["library"] = "collection"
+    # Even a stale passing outcome in a collect-only file supplies no evidence.
+    data["tests"][0]["case"] = "unowned-collection-case"
+    data["tests"][0]["srq"] = "unlisted response"
+    ledger_path.write_text(json.dumps(data))
+    if duplicate_owner:
+        note = hierarchy / "nodes" / "complete-system.md"
+        (note.parent / "complete-other.md").write_text(
+            note.read_text().replace("complete-system", "complete-other")
+        )
+    assert cli.main(["lint", str(hierarchy)]) == int(duplicate_owner)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "INFO: collection: evidence file is a collect-only ledger" in captured.out
+    lines = [line for line in captured.out.splitlines() if line.startswith("LINT:")]
+    if duplicate_owner:
+        assert lines[0] == (
+            "LINT: case example-case is owned by nodes "
+            "complete-other and complete-system"
+        )
+        assert lines[1:] == (
+            ["LINT: complete-other: no evidence, 1 case(s) declared"]
+            if include_run
+            else []
+        )
+    else:
+        assert lines == []
+
+
+def test_scaffold_can_file_cases_from_collect_only_declarations(tmp_path):
+    import json
+
+    hierarchy = copy(tmp_path)
+    (ledger_path,) = (hierarchy / "evidence").glob("*.json")
+    data = json.loads(ledger_path.read_text())
+    data["mode"] = "collect-only"
+    for record in data["tests"]:
+        record["outcome"] = None
+    ledger_path.write_text(json.dumps(data))
+    assert cli.main(["scaffold", str(hierarchy)]) == 0
+    stub = (hierarchy / "nodes" / "unfiled-not-filed.md").read_text()
+    assert "cases:\n- not-filed" in stub

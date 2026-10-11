@@ -29,9 +29,21 @@ OUTCOME_SEVERITY = {
     "passed": 1,
     "xfailed": 2,
     "xpassed": 3,
-    "failed": 4,
-    "error": 5,
+    "error": 4,
+    "failed": 5,
 }
+DEFAULT_KEYS = (
+    "case",
+    "evidence",
+    "srq",
+    "reference_code",
+    "refined_parameter",
+    "referent",
+    "reference_model",
+    "alternative",
+    "basis",
+    "acceptance",
+)
 
 MARKER_HELP = {
     MARK_CASE: (
@@ -75,11 +87,20 @@ def pytest_configure(config):
     """Register the markers and, when asked, the evidence collector."""
     for name, text in MARKER_HELP.items():
         config.addinivalue_line("markers", f"{name}: {text}")
-    settings = load_settings(config.rootpath)
+    settings = load_settings(
+        config.rootpath,
+        ignore_invalid_pyproject=config.inipath is not None
+        and config.inipath.suffix == ".ini",
+    )
     for prefix, values in settings[1].items():
         try:
             if not isinstance(values, dict):
                 raise TypeError("default must be a table")
+            for key in values:
+                if key not in DEFAULT_KEYS:
+                    raise ValueError(
+                        f"unknown key {key!r} (allowed: {', '.join(DEFAULT_KEYS)})"
+                    )
             validate_case(
                 values.get("case"),
                 values.get("evidence"),
@@ -123,10 +144,12 @@ def _record_file(rootdir, name, value):
 @pytest.fixture
 def vv_record(request):
     """Return a callable that validates and records measured test results."""
+    warned = False
 
     def record(
         value=None, interval=None, reference=None, artifact=None, manifest=None, **point
     ):
+        nonlocal warned
         if value is not None:
             _check_number("value", value)
         if interval is not None:
@@ -147,20 +170,35 @@ def vv_record(request):
         # Snapshot JSON data now so later mutation cannot change an earlier call.
         entry = json.loads(json.dumps(entry, allow_nan=False))
         if request.config.getoption("--vv-evidence"):
+            collector = request.config.pluginmanager.get_plugin("vv-evidence")
+            if request.node.nodeid not in collector.records and not warned:
+                warnings.warn(
+                    f"{request.node.nodeid}: vv_record results are dropped because "
+                    "the test has no evidence declaration; "
+                    "add a marker or path default.",
+                    pytest.PytestWarning,
+                    stacklevel=2,
+                )
+                warned = True
             request.node.user_properties.append((RESULT_PROPERTY, entry))
 
     return record
 
 
-def load_settings(rootdir):
+def load_settings(rootdir, *, ignore_invalid_pyproject=False):
     """Return settings from the rootdir's pyproject or standalone TOML file."""
     rootdir = Path(rootdir)
     pyproject = rootdir / "pyproject.toml"
     standalone = rootdir / "ineedvalidation.toml"
     table = None
     if pyproject.is_file():
-        with pyproject.open("rb") as handle:
-            data = tomllib.load(handle)
+        try:
+            with pyproject.open("rb") as handle:
+                data = tomllib.load(handle)
+        except tomllib.TOMLDecodeError as error:
+            if not ignore_invalid_pyproject:
+                raise pytest.UsageError(f"{pyproject}: {error}") from error
+            data = {}
         table = data.get("tool", {}).get("ineedvalidation")
     if standalone.is_file():
         if table is not None:
@@ -184,7 +222,7 @@ def match_default(relpath, defaults):
 
 
 def _outcome(report, current):
-    """Fold a phase report by severity, or return None for an irrelevant phase."""
+    """Keep body failures ahead of fixture errors across phases and workers."""
     if report.when in ("setup", "teardown", "???") and report.failed:
         outcome = "error"
     elif report.when == "setup" and report.skipped:
@@ -219,7 +257,7 @@ def _git_commit(rootdir):
     return result.stdout.strip() or None
 
 
-def _git_root(rootdir):
+def _git_suite_root(rootdir):
     """The pytest rootdir relative to its git repository, or None."""
     try:
         result = subprocess.run(
@@ -376,7 +414,7 @@ class EvidenceCollector:
             recorded=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             tests=tuple(self.records[key] for key in sorted(self.records)),
             mode="collect-only" if self.config.option.collectonly else "run",
-            root=_git_root(self.config.rootpath),
+            suite_root=_git_suite_root(self.config.rootpath),
         )
         target.write_text(
             json.dumps(payload.to_dict(), indent=1, allow_nan=False) + "\n"

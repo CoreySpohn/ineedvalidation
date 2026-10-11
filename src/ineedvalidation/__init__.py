@@ -7,6 +7,21 @@ that ledger, lints them against each other, and renders the hierarchy.
 """
 
 from ineedvalidation._version import __version__
-from ineedvalidation.marks import EVIDENCE_KINDS, case, regression, seam
+from ineedvalidation.marks import (
+    ACCEPTANCE_KEYS,
+    BASES,
+    EVIDENCE_KINDS,
+    case,
+    regression,
+    seam,
+)
 
-__all__ = ["EVIDENCE_KINDS", "__version__", "case", "regression", "seam"]
+__all__ = [
+    "ACCEPTANCE_KEYS",
+    "BASES",
+    "EVIDENCE_KINDS",
+    "__version__",
+    "case",
+    "regression",
+    "seam",
+]

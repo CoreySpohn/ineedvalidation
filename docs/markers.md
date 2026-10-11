@@ -92,6 +92,8 @@ are `metric`, `tolerance`, `margin`, `rule`, `domain`, `draws`, `sigma`,
 or floats, or lists of those values. Nested dictionaries, nested lists, null values,
 NaN and infinity are rejected. `registered` must instead be a string containing a
 valid calendar date in exactly `YYYY-MM-DD` form.
+In TOML, quote the date (`registered = "2026-09-01"`); an unquoted date
+is parsed as a date object instead of the required string.
 
 ```python
 @vv.case(
@@ -147,7 +149,11 @@ fields such as `basis` and `acceptance`; no fields are merged. A marker that omi
 them records null even when the path default supplies them. Every defaults entry
 is validated at pytest configuration time with the same rules as the decorator,
 even for an unused prefix or a run without `--vv-evidence`. An invalid entry raises
-`pytest.UsageError` naming its prefix. `library` names the repository in
+`pytest.UsageError` naming its prefix. Unknown keys are fatal and the diagnostic
+lists the allowed keys, for example:
+`ineedvalidation default 'tests/': unknown key 'note' (allowed: ...)`.
+Version 1.0 ignored unknown keys in defaults tables.
+`library` names the repository in
 the evidence file; without it the name of the root directory is used.
 
 ## Test suites outside a package
@@ -182,6 +188,10 @@ The plugin reads settings only from that rootdir. It uses
 settings. Defining settings in both files raises `pytest.UsageError` naming both
 paths; choose one settings file. `--vv-library NAME` overrides the library name
 from either file for a single run.
+When `pytest.ini` configures the suite, the plugin tolerates invalid TOML in an
+unrelated `pyproject.toml` and can still read the standalone settings.
+Use `pytest -c pytest.ini` if pytest itself rejects that TOML during configuration
+discovery, before the plugin can run.
 
 ## Writing the evidence file
 
@@ -193,7 +203,7 @@ The file lists every marked or defaulted test with the outcome it reached:
 
 ```json
 {"library": "mylib", "commit": "abc1234", "recorded": "2026-09-04T15:00:00Z",
- "mode": "run", "root": ".",
+ "mode": "run", "suite_root": ".",
  "tests": [{"nodeid": "tests/test_kernels.py::test_sum", "case": "kernel-sum",
             "evidence": "code-verification", "srq": "summation error",
             "reference_code": null, "refined_parameter": null, "referent": null,
@@ -241,6 +251,8 @@ and adding no invalid entry. Without `--vv-evidence` the fixture still validates
 arguments and file paths, but records nothing and writes no ledger. Tests that make
 no calls have an empty `results` list. Worker reports carry results to the controller
 under pytest-xdist.
+With `--vv-evidence`, calling `vv_record` in a test with no marker or matching
+path default emits a warning because its results are dropped from the ledger.
 
 ## Collection modes and parallel runs
 
@@ -269,11 +281,17 @@ another worker crashes. Serial reports and serial JUnit XML carry no declaration
 property, while under xdist JUnit XML may include the `ineedvalidation.declaration`
 property carried by worker reports.
 
-`root` records the pytest rootdir relative to the Git repository's top level, using
+A failed test body stays `failed` even when teardown also errors. `error` applies
+to setup or teardown errors only when the body did not fail; a setup error records
+`error` rather than the null outcome produced by the 1.0 bug. With xdist
+`--dist each`, the same rule folds reports across workers: a body failure on any
+worker stays `failed` even if another worker reports a setup or teardown error.
+
+`suite_root` records the pytest rootdir relative to the Git repository's top level, using
 forward slashes: `"."` for the repository root or, for example, `"sub/dir"` for a
 nested suite. Outside a Git repository it is `null`.
 
 A 1.0 ledger still loads. Missing keyword fields, including `basis` and
-`acceptance`, read as null; missing `mode` reads as `"run"` and missing `root` as
+`acceptance`, read as null; missing `mode` reads as `"run"` and missing `suite_root` as
 null. Missing `results` reads as an empty list. The new metadata does not change the
 evidence summary or plain lint output for existing ledgers.

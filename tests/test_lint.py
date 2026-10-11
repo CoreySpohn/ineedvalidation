@@ -35,6 +35,15 @@ def test_two_nodes_owning_one_case_are_reported_without_changing_summary():
     assert serialized == (HIER.parent / "golden/hierarchy-summary.json").read_bytes()
 
 
+def test_two_owners_are_reported_under_require_metadata_too():
+    got = loaded()
+    got["complete-system"] = replace(got["complete-system"], cases=("kernel-sum",))
+    problems = nodes.lint(got, require_metadata=True)
+    assert (
+        "case kernel-sum is owned by nodes complete-system and unit-kernel" in problems
+    )
+
+
 def test_repeating_a_case_in_one_node_does_not_add_an_owner():
     got = loaded()
     got["unit-kernel"] = replace(got["unit-kernel"], cases=("kernel-sum", "kernel-sum"))
@@ -212,6 +221,7 @@ METADATA_PROBLEMS = [
 
 def test_require_metadata_reports_each_defect_and_exempts_regression():
     files = evidence.load_dir(METADATA_HIER / "evidence")
+    assert files[0].suite_root == "."
     assert nodes.lint({}, files=files, require_metadata=True) == METADATA_PROBLEMS
 
 
@@ -249,29 +259,34 @@ def test_regressions_are_exempt_from_all_metadata_checks():
     )
 
 
-def test_collect_only_ledger_in_the_evidence_directory_is_reported(tmp_path, capsys):
+@pytest.mark.parametrize("require_metadata", [False, True])
+def test_collect_only_ledger_in_the_evidence_directory_is_reported(
+    tmp_path, capsys, require_metadata
+):
     hierarchy = tmp_path / "hierarchy"
     shutil.copytree(METADATA_HIER, hierarchy)
-    evidence_dir = hierarchy / "evidence"
-    (ledger_path,) = evidence_dir.glob("*.json")
+    (ledger_path,) = (hierarchy / "evidence").glob("*.json")
     data = json.loads(ledger_path.read_text())
     data["mode"] = "collect-only"
     for record in data["tests"]:
         record["outcome"] = None
+        record["basis"] = "exact-algebra"
+        record["acceptance"] = {"reference_error": 0}
     ledger_path.write_text(json.dumps(data))
 
-    files = evidence.load_dir(evidence_dir)
-    assert len(files) == 1
-    assert files[0].mode == "collect-only"
-    problem = (
-        f"{files[0].library}: evidence file is a collect-only ledger with no outcomes"
+    files = evidence.load_dir(hierarchy / "evidence")
+    problem = "widgetlib: evidence file is a collect-only ledger with no outcomes"
+    assert nodes.lint({}, files=files, require_metadata=require_metadata) == (
+        [problem] if require_metadata else []
     )
-    assert nodes.lint({}, files=files) == [problem]
-    assert cli.main(["lint", str(hierarchy)]) == 1
+    argv = ["lint", str(hierarchy)]
+    if require_metadata:
+        argv.append("--require-metadata")
+    assert cli.main(argv) == int(require_metadata)
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out == (
-        f"LINT: {problem}\n"
+        f"{'LINT' if require_metadata else 'INFO'}: {problem}\n"
         "1 nodes, complete=1, system=0, subsystem=0, benchmark=0, unit=0\n"
     )
 
@@ -295,3 +310,40 @@ def test_metadata_checks_run_regardless_of_test_outcome(outcome):
         nodes.lint({}, files=[replace(ledger, tests=records)], require_metadata=True)
         == METADATA_PROBLEMS
     )
+
+
+@pytest.mark.parametrize("field", ["recorded", "registered"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "bad-date",
+        "2026-02-30",
+        "20260904",
+        "2026-09-04Tbad",
+        "2026-09-04T25:00:00Z",
+        "",
+        None,
+        42,
+        [],
+    ],
+)
+def test_metadata_malformed_dates_are_lint_problems(tmp_path, capsys, field, value):
+    hierarchy = tmp_path / "hierarchy"
+    shutil.copytree(METADATA_HIER, hierarchy)
+    (ledger_path,) = (hierarchy / "evidence").glob("*.json")
+    data = json.loads(ledger_path.read_text())
+    record = data["tests"][2]
+    record["acceptance"]["registered"] = "2026-09-04"
+    data["tests"] = [record]
+    if field == "recorded":
+        data["recorded"] = value
+    else:
+        record["acceptance"]["registered"] = value
+    ledger_path.write_text(json.dumps(data))
+    assert cli.main(["lint", str(hierarchy), "--require-metadata"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    lines = [line for line in captured.out.splitlines() if line.startswith("LINT:")]
+    assert len(lines) == 1
+    assert field in lines[0]
+    assert "valid" in lines[0]

@@ -32,6 +32,8 @@ def summarize(
     owner = {case: nid for nid, node in nodes.items() for case in node.cases}
     collected: dict[str, list[tuple[str, object]]] = {nid: [] for nid in nodes}
     for evidence_file in files:
+        if evidence_file.mode == "collect-only":
+            continue
         for record in evidence_file.tests:
             nid = owner.get(record.case)
             if nid is not None:

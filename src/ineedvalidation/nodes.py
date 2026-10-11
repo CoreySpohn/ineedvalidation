@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, datetime
 from pathlib import Path
 
 import yaml
@@ -69,6 +70,15 @@ def _seam_is_coupled(nodes: dict[str, Node], producer: str, consumer: str) -> bo
         if any(p in lower for p in nodes[nid].couples_to):
             return True
     return False
+
+
+def _calendar_date(value):
+    """Parse a calendar date in exactly YYYY-MM-DD form."""
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value
+    ):
+        raise ValueError("must be a valid YYYY-MM-DD date")
+    return date.fromisoformat(value)
 
 
 def lint(
@@ -165,14 +175,25 @@ def lint(
         problems.append(
             f"case {case} is not owned by any node (from {', '.join(libraries)})"
         )
-    for ledger in files or []:
-        if ledger.mode == "collect-only":
-            problems.append(
-                f"{ledger.library}: evidence file is a collect-only ledger "
-                "with no outcomes"
-            )
     if require_metadata:
         for ledger in files or []:
+            if ledger.mode == "collect-only":
+                problems.append(
+                    f"{ledger.library}: evidence file is a collect-only ledger "
+                    "with no outcomes"
+                )
+            recorded = None
+            try:
+                recorded = _calendar_date(
+                    ledger.recorded[:10] if isinstance(ledger.recorded, str) else None
+                )
+                datetime.fromisoformat(ledger.recorded)
+            except ValueError:
+                problems.append(
+                    f"{ledger.library}: recorded must be a valid ISO date or timestamp "
+                    "starting with a YYYY-MM-DD date"
+                )
+                recorded = None
             for record in ledger.tests:
                 # A null evidence kind and no seam is how the ledger records
                 # regressions; a seam anchor has no kind but still needs a basis.
@@ -189,12 +210,18 @@ def lint(
                     problems.append(
                         f"{label}: reference_model requires acceptance.reference_error"
                     )
-                registered = acceptance.get("registered")
-                if registered and date.fromisoformat(registered) > date.fromisoformat(
-                    ledger.recorded[:10]
-                ):
-                    problems.append(
-                        f"{label}: acceptance.registered {registered} "
-                        f"postdates recorded {ledger.recorded[:10]}"
-                    )
+                if "registered" in acceptance:
+                    try:
+                        registered = _calendar_date(acceptance["registered"])
+                    except ValueError:
+                        problems.append(
+                            f"{label}: acceptance.registered must be a valid "
+                            "YYYY-MM-DD date"
+                        )
+                    else:
+                        if recorded is not None and registered > recorded:
+                            problems.append(
+                                f"{label}: acceptance.registered {registered} "
+                                f"postdates recorded {recorded}"
+                            )
     return problems

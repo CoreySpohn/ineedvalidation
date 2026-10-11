@@ -88,10 +88,10 @@ $ ineedvalidation lint hierarchy/ --library-map libraries.md --library-map extra
 Lint reports a planned library absent from every supplied file. With one file,
 the library check and output are unchanged.
 
-When evidence files are present the lint also runs in the other direction: a case
+When run evidence files are present the lint also runs in the other direction: a case
 named by a test must belong to some node, a node that declares cases must have at
 least one test, a response quantity named by a test must be one the node lists, a seam
-must join two coupled nodes, and a claimed validation level of 2 or above needs a passing validation test that actually passed, not merely one that was marked. Without any evidence file
+must join two coupled nodes, and a claimed validation level of 2 or above needs a passing validation test that actually passed, not merely one that was marked. Without any run evidence file
 these rules stay off, since there is nothing to check the notes against.
 
 Add `--require-metadata` to check the criteria recorded with each test:
@@ -106,10 +106,15 @@ This reports a non-regression record without `basis`, a record naming a
 A criterion registered on the day of the run is allowed. Regression records are
 exempt from all three checks. These checks run regardless of test outcome and do
 not change which evidence kinds the summary counts.
+Malformed `recorded` or `acceptance.registered` dates produce `LINT:` lines.
 
 The flag prints one `LINT:` line per problem and exits 1 if there are any problems;
-it omits the node census. Plain `lint` keeps its existing checks and census, and
-does not require this metadata, including when reading a 1.0 ledger.
+both modes print the node census. Plain `lint` does not require this metadata,
+including when reading a 1.0 ledger. It excludes collect-only ledgers from evidence
+counting and reports each with an informational `INFO:` line that does not change
+the exit status. With `--require-metadata`, a collect-only ledger is fatal.
+Each case must have at most one owning node; duplicate ownership is fatal in both
+modes, including when no run evidence files are present.
 
 `ineedvalidation scaffold hierarchy/` writes a stub note for every case a test names
 that no node owns. The stub leaves the level blank so that the curator has to place it

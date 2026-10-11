@@ -84,24 +84,31 @@ def _lint(args):
         if args.library_map
         else None
     )
+    run_files = [ledger for ledger in files if ledger.mode != "collect-only"]
     # Without a ledger there is nothing to lint the notes against, so the
     # two-way rules stay off and the declared fields carry the evidence.
     problems = nodes.lint(
         loaded,
-        summary=summary if files else None,
+        summary=summary if run_files else None,
         library_text=library_text,
-        unfiled=evidence.unfiled_cases(loaded, files) if files else None,
+        unfiled=evidence.unfiled_cases(loaded, run_files) if run_files else None,
         files=files,
         require_metadata=args.require_metadata,
     )
     for problem in problems:
         print("LINT:", problem)
     if not args.require_metadata:
-        census = ", ".join(
-            f"{level}={sum(node.level == level for node in loaded.values())}"
-            for level in HIERARCHY_LEVELS
-        )
-        print(f"{len(loaded)} nodes, {census}")
+        for ledger in files:
+            if ledger.mode == "collect-only":
+                print(
+                    f"INFO: {ledger.library}: evidence file is a collect-only ledger "
+                    "with no outcomes"
+                )
+    census = ", ".join(
+        f"{level}={sum(node.level == level for node in loaded.values())}"
+        for level in HIERARCHY_LEVELS
+    )
+    print(f"{len(loaded)} nodes, {census}")
     return 1 if problems else 0
 
 

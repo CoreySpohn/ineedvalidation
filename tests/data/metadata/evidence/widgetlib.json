@@ -2,6 +2,7 @@
  "library": "widgetlib",
  "commit": "0123456",
  "recorded": "2026-09-04T15:00:00Z",
+ "suite_root": ".",
  "tests": [
   {
    "nodeid": "tests/test_model.py::test_missing_basis",

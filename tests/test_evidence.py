@@ -1,7 +1,7 @@
 import json
 import subprocess
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 from test_nodes import HIER
@@ -106,3 +106,16 @@ def test_plain_lint_matches_1_0_golden():
     assert result.returncode == 1
     assert result.stderr == b""
     assert result.stdout == (HIER.parent / "golden/hierarchy-lint.txt").read_bytes()
+
+
+@pytest.mark.parametrize("include_run", [False, True])
+def test_collect_only_records_do_not_count_as_evidence(include_run):
+    loaded = nodes.load(HIER / "nodes")
+    ledger = evidence.load_dir(HIER / "evidence")[0]
+    collected = replace(ledger, library="collection", mode="collect-only")
+    files = [collected, ledger] if include_run else [collected]
+    summaries = evidence.summarize(loaded, files)
+    bench = summaries["benchmark-bench"]
+    assert bench.tests == (2 if include_run else 0)
+    assert bench.computed is include_run
+    assert bench.libraries == ("widgetlib",)

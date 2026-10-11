@@ -74,6 +74,7 @@ ACCEPTANCE_KEYS = (
     "reference_error",
     "registered",
 )
+"""Allowed keys describing a test's acceptance criterion."""
 
 
 def _check_slug(name, value):
@@ -94,7 +95,25 @@ def validate_case(
     basis=None,
     acceptance=None,
 ):
-    """Validate a case declaration from a decorator or a path default."""
+    """Validate a case declaration from a decorator or a path default.
+
+    Args:
+        slug: non-empty name of the physical case.
+        evidence: one of :data:`EVIDENCE_KINDS`.
+        srq: the system response quantity the test checks, if one.
+        reference_code: independent code used for a cross-code benchmark.
+        refined_parameter: discretization parameter for solution verification.
+        referent: measured dataset used for validation.
+        reference_model: reference computation for solution verification.
+        alternative: alternative model for uncertainty quantification.
+        basis: one of :data:`BASES`, describing how the criterion is established.
+        acceptance: criterion metadata keyed by :data:`ACCEPTANCE_KEYS`.
+
+    Raises:
+        TypeError: if the case slug or acceptance values have invalid types.
+        ValueError: if the evidence kind, basis or acceptance metadata is invalid,
+            or a keyword belongs to another evidence kind.
+    """
     _check_slug("case", slug)
     if evidence not in EVIDENCE_KINDS:
         raise ValueError(f"evidence must be one of {EVIDENCE_KINDS}, got {evidence!r}")
@@ -119,6 +138,11 @@ def validate_case(
         if key not in ACCEPTANCE_KEYS:
             raise ValueError(f"unknown acceptance key {key!r}")
         if key == "registered":
+            if isinstance(value, date):
+                raise ValueError(
+                    "acceptance.registered must be a YYYY-MM-DD string; "
+                    "quote the date in TOML"
+                )
             if not isinstance(value, str) or not re.fullmatch(
                 r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value
             ):
