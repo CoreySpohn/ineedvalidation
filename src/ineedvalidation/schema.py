@@ -140,6 +140,8 @@ class EvidenceFile:
     commit: str | None
     recorded: str
     tests: tuple[TestRecord, ...] = ()
+    mode: str = "run"
+    root: str | None = None
 
     def to_dict(self) -> dict:
         """Return the JSON form of the file."""
@@ -147,6 +149,8 @@ class EvidenceFile:
             "library": self.library,
             "commit": self.commit,
             "recorded": self.recorded,
+            "mode": self.mode,
+            "root": self.root,
             "tests": [t.to_dict() for t in self.tests],
         }
 
@@ -158,6 +162,8 @@ class EvidenceFile:
             commit=data.get("commit"),
             recorded=data.get("recorded", ""),
             tests=tuple(TestRecord.from_dict(t) for t in data.get("tests", [])),
+            mode=data.get("mode", "run"),
+            root=data.get("root"),
         )
 
 

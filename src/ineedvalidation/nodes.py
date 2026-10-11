@@ -158,6 +158,12 @@ def lint(
         problems.append(
             f"case {case} is not owned by any node (from {', '.join(libraries)})"
         )
+    for ledger in files or []:
+        if ledger.mode == "collect-only":
+            problems.append(
+                f"{ledger.library}: evidence file is a collect-only ledger "
+                "with no outcomes"
+            )
     if require_metadata:
         for ledger in files or []:
             for record in ledger.tests:

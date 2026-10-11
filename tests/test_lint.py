@@ -1,9 +1,11 @@
+import json
+import shutil
 from dataclasses import replace
 
 import pytest
 from test_nodes import HIER
 
-from ineedvalidation import evidence, nodes
+from ineedvalidation import cli, evidence, nodes
 from ineedvalidation.schema import TestRecord as Record
 
 
@@ -216,6 +218,33 @@ def test_regressions_are_exempt_from_all_metadata_checks():
     assert (
         nodes.lint({}, files=[replace(ledger, tests=(record,))], require_metadata=True)
         == []
+    )
+
+
+def test_collect_only_ledger_in_the_evidence_directory_is_reported(tmp_path, capsys):
+    hierarchy = tmp_path / "hierarchy"
+    shutil.copytree(METADATA_HIER, hierarchy)
+    evidence_dir = hierarchy / "evidence"
+    (ledger_path,) = evidence_dir.glob("*.json")
+    data = json.loads(ledger_path.read_text())
+    data["mode"] = "collect-only"
+    for record in data["tests"]:
+        record["outcome"] = None
+    ledger_path.write_text(json.dumps(data))
+
+    files = evidence.load_dir(evidence_dir)
+    assert len(files) == 1
+    assert files[0].mode == "collect-only"
+    problem = (
+        f"{files[0].library}: evidence file is a collect-only ledger with no outcomes"
+    )
+    assert nodes.lint({}, files=files) == [problem]
+    assert cli.main(["lint", str(hierarchy)]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == (
+        f"LINT: {problem}\n"
+        "1 nodes, complete=1, system=0, subsystem=0, benchmark=0, unit=0\n"
     )
 
 

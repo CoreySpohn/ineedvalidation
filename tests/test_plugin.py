@@ -1,8 +1,15 @@
+import importlib.util
 import json
+import os
+import subprocess
+import xml.etree.ElementTree as ET
+from types import SimpleNamespace
 
 import pytest
 from test_marks import EXPECTED_BASES
+from test_nodes import HIER
 
+from ineedvalidation.plugin import _outcome
 from ineedvalidation.schema import EvidenceFile
 
 pytest_plugins = ["pytester"]
@@ -43,6 +50,8 @@ def test_evidence_records_outcomes(pytester, tmp_path):
     result.assert_outcomes(passed=3, skipped=1)
     data = json.loads(out.read_text())
     assert data["library"] == "widgetlib"
+    assert data["mode"] == "run"
+    assert EvidenceFile.from_dict(data).mode == "run"
     by_name = {r["nodeid"].split("::")[-1]: r for r in data["tests"]}
     assert set(by_name) == {"test_passes", "test_skips", "test_golden"}
     assert by_name["test_passes"]["case"] == "kernel-sum"
@@ -60,6 +69,9 @@ def test_collect_only_leaves_outcomes_null(pytester, tmp_path):
     out = tmp_path / "evidence.json"
     pytester.runpytest("--collect-only", "--vv-evidence", str(out))
     data = json.loads(out.read_text())
+    assert data["mode"] == "collect-only"
+    assert EvidenceFile.from_dict(data).mode == "collect-only"
+    assert len(data["tests"]) == 3
     assert {r["outcome"] for r in data["tests"]} == {None}
 
 
@@ -364,3 +376,475 @@ def test_1_0_ledger_missing_metadata_reads_as_null(keyword):
     loaded = EvidenceFile.from_dict(data)
     assert getattr(loaded.tests[0], keyword) is None
     assert loaded.to_dict()["tests"][0][keyword] is None
+
+
+SIX_TESTS = """
+import pytest
+import ineedvalidation as vv
+
+
+@vv.case("kernel-sum", "code-verification", srq="summation error",
+         basis="floating-point", acceptance={"tolerance": 1e-12})
+def test_passes():
+    assert True
+
+
+@vv.case("kernel-sum", "code-verification")
+def test_fails():
+    assert False
+
+
+@vv.case("kernel-sum", "validation", referent="lab-data")
+@pytest.mark.skip(reason="no reference data")
+def test_skips():
+    pass
+
+
+@vv.case("kernel-sum", "code-verification")
+@pytest.mark.xfail(reason="known limitation")
+def test_xfails():
+    assert False
+
+
+@vv.regression
+def test_regression():
+    assert True
+
+
+@vv.seam("producer", "consumer", case="kernel-sum")
+def test_seam():
+    assert True
+"""
+
+
+def missing_xdist_action(environ):
+    return "fail" if environ.get("REQUIRE_XDIST") == "1" else "skip"
+
+
+def require_xdist():
+    if importlib.util.find_spec("xdist") is None:
+        if missing_xdist_action(os.environ) == "fail":
+            pytest.fail("pytest-xdist is required when REQUIRE_XDIST=1")
+        pytest.skip("pytest-xdist is not installed")
+
+
+@pytest.mark.parametrize(
+    ("environ", "expected"),
+    [({}, "skip"), ({"REQUIRE_XDIST": "0"}, "skip"), ({"REQUIRE_XDIST": "1"}, "fail")],
+)
+def test_missing_xdist_action(environ, expected):
+    assert missing_xdist_action(environ) == expected
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_missing_xdist_skips_unless_required(monkeypatch, required):
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setenv("REQUIRE_XDIST", "1" if required else "0")
+    expected = pytest.fail.Exception if required else pytest.skip.Exception
+    # Catch either outcome so an erroneous skip fails this test instead of
+    # skipping the test itself when xdist is required.
+    with pytest.raises((pytest.fail.Exception, pytest.skip.Exception)) as caught:
+        require_xdist()
+    assert isinstance(caught.value, expected)
+    assert "pytest-xdist" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("worse", "better"),
+    [
+        ("error", "failed"),
+        ("error", "xpassed"),
+        ("error", "xfailed"),
+        ("error", "passed"),
+        ("error", "skipped"),
+        ("failed", "xpassed"),
+        ("failed", "xfailed"),
+        ("failed", "passed"),
+        ("failed", "skipped"),
+        ("xpassed", "xfailed"),
+        ("xpassed", "passed"),
+        ("xpassed", "skipped"),
+        ("xfailed", "passed"),
+        ("xfailed", "skipped"),
+        ("passed", "skipped"),
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_outcome_folding_keeps_the_worst_report(worse, better, reverse):
+    outcomes = (better, worse) if reverse else (worse, better)
+    current = None
+    for outcome in outcomes:
+        report = SimpleNamespace(
+            when="teardown" if outcome == "error" else "call",
+            failed=outcome in ("error", "failed"),
+            passed=outcome in ("passed", "xpassed"),
+            skipped=outcome in ("skipped", "xfailed"),
+        )
+        if outcome in ("xpassed", "xfailed"):
+            report.wasxfail = "known limitation"
+        folded = _outcome(report, current)
+        if folded is not None:
+            current = folded
+    assert current == worse
+
+
+def test_xdist_each_keeps_a_failure_from_one_worker(pytester, tmp_path):
+    require_xdist()
+    pytester.makepyfile(
+        test_cases="""
+import os
+import time
+import ineedvalidation as vv
+
+@vv.case("kernel-sum", "code-verification")
+def test_worker_outcome():
+    if os.environ.get("PYTEST_XDIST_WORKER") == "gw1":
+        time.sleep(0.5)
+    assert os.environ.get("PYTEST_XDIST_WORKER") != "gw0"
+"""
+    )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        "-n", "2", "--dist", "each", "--vv-evidence", str(out)
+    )
+    result.assert_outcomes(passed=1, failed=1)
+    records = json.loads(out.read_text())["tests"]
+    assert len(records) == 1
+    assert records[0]["outcome"] == "failed"
+
+
+@pytest.mark.parametrize("crash", [False, True])
+def test_xdist_warns_only_when_no_worker_delivers_declarations(
+    pytester, tmp_path, crash
+):
+    require_xdist()
+    pytester.makepyfile(
+        test_cases=f"""
+import os
+import ineedvalidation as vv
+
+pytestmark = vv.case("kernel-sum", "code-verification")
+
+def test_first():
+    if {crash!r}:
+        os._exit(1)
+
+def test_remaining():
+    pass
+"""
+    )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        "-n",
+        "1" if crash else "2",
+        "--max-worker-restart",
+        "0",
+        "--vv-evidence",
+        str(out),
+    )
+    ledger = json.loads(out.read_text())
+    assert ledger["mode"] == "run"
+    if crash:
+        assert result.ret == pytest.ExitCode.TESTS_FAILED
+        assert len(ledger["tests"]) < 2
+        result.stdout.fnmatch_lines([f"*{out}*may be incomplete*"])
+        assert "no worker delivered its declarations payload" in result.stdout.str()
+    else:
+        result.assert_outcomes(passed=2)
+        assert len(ledger["tests"]) == 2
+        assert "may be incomplete" not in result.stdout.str()
+        assert "may be incomplete" not in result.stderr.str()
+
+
+@pytest.fixture
+def serial_and_parallel_ledgers(pytester, tmp_path):
+    require_xdist()
+    pytester.makepyfile(test_cases=SIX_TESTS)
+    pytester.makefile(".toml", pyproject=TOML)
+    ledgers = []
+    for name, args in (("serial", []), ("parallel", ["-n", "2"])):
+        out = tmp_path / f"{name}.json"
+        result = pytester.runpytest_subprocess(*args, "--vv-evidence", str(out))
+        result.assert_outcomes(passed=3, failed=1, skipped=1, xfailed=1)
+        ledgers.append(json.loads(out.read_text()))
+    return ledgers
+
+
+def test_serial_and_xdist_records_are_equal(serial_and_parallel_ledgers):
+    serial, parallel = serial_and_parallel_ledgers
+
+    def records(ledger):
+        return {
+            (
+                r["nodeid"],
+                r["case"],
+                r["evidence"],
+                r["srq"],
+                tuple(r["seam"]) if r["seam"] else None,
+                r["outcome"],
+            )
+            for r in ledger["tests"]
+        }
+
+    serial_records, parallel_records = records(serial), records(parallel)
+    assert len(serial_records) == 6
+    assert len(parallel_records) == 6
+    assert serial_records == parallel_records
+    # Optional metadata must also survive report serialization.
+    assert serial["tests"] == parallel["tests"]
+
+
+def test_xdist_records_each_nodeid_once(serial_and_parallel_ledgers):
+    _, parallel = serial_and_parallel_ledgers
+    nodeids = [r["nodeid"] for r in parallel["tests"]]
+    assert len(nodeids) == 6
+    assert len(nodeids) == len(set(nodeids))
+
+
+@pytest.mark.parametrize("args", [["-x"], ["-k", "remaining"]])
+def test_serial_and_xdist_include_unreported_declarations(pytester, tmp_path, args):
+    require_xdist()
+    pytester.makepyfile(
+        test_cases="""
+import time
+import pytest
+import ineedvalidation as vv
+
+pytestmark = vv.case("kernel-sum", "code-verification", basis="floating-point")
+
+def test_first():
+    assert False
+
+@pytest.mark.parametrize("index", range(20))
+def test_remaining(index):
+    time.sleep(0.01)
+"""
+    )
+    declarations = []
+    for name, workers in (("serial", []), ("parallel", ["-n", "2"])):
+        out = tmp_path / f"{name}.json"
+        result = pytester.runpytest_subprocess(
+            *workers, *args, "--vv-evidence", str(out)
+        )
+        if "-x" in args:
+            assert result.parseoutcomes()["failed"] == 1
+            assert result.ret == (
+                pytest.ExitCode.INTERRUPTED if workers else pytest.ExitCode.TESTS_FAILED
+            )
+        else:
+            result.assert_outcomes(passed=20)
+            assert result.ret == pytest.ExitCode.OK
+        ledger = json.loads(out.read_text())
+        assert ledger["mode"] == "run"
+        records = ledger["tests"]
+        assert len(records) == 21
+        assert len({record["nodeid"] for record in records}) == 21
+        assert any(record["outcome"] is None for record in records)
+        first = next(r for r in records if r["nodeid"].endswith("::test_first"))
+        assert first["outcome"] == ("failed" if "-x" in args else None)
+        declarations.append([{**record, "outcome": None} for record in records])
+    assert declarations[0] == declarations[1]
+
+
+@pytest.mark.parametrize("phase", ["setup", "call"])
+def test_worker_crash_is_an_error_and_keeps_unreported_tests(pytester, tmp_path, phase):
+    require_xdist()
+    pytester.makepyfile(
+        test_cases=f"""
+import os
+import time
+import pytest
+import ineedvalidation as vv
+
+pytestmark = vv.case("kernel-sum", "code-verification")
+
+@pytest.fixture
+def crash_setup():
+    if {phase!r} == "setup":
+        os._exit(1)
+
+def test_crashes(crash_setup):
+    os._exit(1)
+
+@pytest.mark.parametrize("index", range(20))
+def test_remaining(index):
+    time.sleep(0.05)
+"""
+    )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        "-n", "2", "-x", "--max-worker-restart=0", "--vv-evidence", str(out)
+    )
+    assert result.ret == 1
+    result.stdout.fnmatch_lines(["*worker*crashed*test_cases.py::test_crashes*"])
+    records = json.loads(out.read_text())["tests"]
+    assert len(records) == 21
+    by_nodeid = {record["nodeid"]: record for record in records}
+    assert len(by_nodeid) == 21
+    assert by_nodeid["test_cases.py::test_crashes"]["outcome"] == "error"
+    assert any(record["outcome"] is None for record in records)
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_body_failure_and_fixture_errors(pytester, tmp_path, parallel):
+    if parallel:
+        require_xdist()
+    pytester.makepyfile(
+        test_errors="""
+import pytest
+import ineedvalidation as vv
+
+pytestmark = vv.case("kernel-sum", "code-verification")
+
+@pytest.fixture
+def broken_teardown():
+    yield
+    raise RuntimeError("teardown failed")
+
+@pytest.fixture
+def broken_setup():
+    raise RuntimeError("setup failed")
+
+def test_body_failure():
+    assert False
+
+def test_teardown_error(broken_teardown):
+    pass
+
+def test_setup_error(broken_setup):
+    pass
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        *(["-n", "2"] if parallel else []), "--vv-evidence", str(out)
+    )
+    result.assert_outcomes(passed=1, failed=1, errors=2)
+    records = json.loads(out.read_text())["tests"]
+    assert len(records) == 3
+    assert {r["nodeid"].split("::")[-1]: r["outcome"] for r in records} == {
+        "test_body_failure": "failed",
+        "test_teardown_error": "error",
+        "test_setup_error": "error",
+    }
+
+
+def test_worker_does_not_write_evidence(tmp_path):
+    from ineedvalidation.plugin import EvidenceCollector
+
+    out = tmp_path / "evidence.json"
+    config = SimpleNamespace(
+        workerinput={},
+        rootpath=tmp_path,
+        option=SimpleNamespace(collectonly=False),
+        getoption=lambda name: str(out) if name == "--vv-evidence" else None,
+    )
+    collector = EvidenceCollector(config, (None, {}))
+    collector.pytest_sessionfinish(None, 0)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("worker", [False, True])
+def test_only_worker_phase_reports_carry_the_full_declaration(
+    pytester, tmp_path, worker
+):
+    from ineedvalidation.plugin import DECLARATION_PROPERTY
+
+    pytester.makepyfile(test_cases=SIX_TESTS)
+    pytester.makefile(".toml", pyproject=TOML)
+    pytester.makeconftest(f"""
+def pytest_configure(config):
+    if {worker!r}:
+        config.workerinput = {{}}
+        config.workeroutput = {{}}
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        item.user_properties.append(("custom-property", "preserved"))
+
+def pytest_sessionfinish(session):
+    import json
+    collector = session.config.pluginmanager.get_plugin("vv-evidence")
+    records = [record.to_dict() for record in collector.records.values()]
+    (session.config.rootpath / "reports.json").write_text(json.dumps(records))
+""")
+    out = tmp_path / "evidence.json"
+    result = pytester.inline_run("--vv-evidence", str(out))
+    reports = result.getreports("pytest_runtest_logreport")
+    records = {
+        r["nodeid"]: r for r in json.loads((pytester.path / "reports.json").read_text())
+    }
+    assert len(records) == 6
+    assert len(reports) == 17  # A setup skip has no call phase.
+    for report in reports:
+        properties = dict(report.user_properties)
+        assert properties["custom-property"] == "preserved"
+        if worker:
+            assert properties[DECLARATION_PROPERTY] == {
+                **records[report.nodeid],
+                "outcome": None,
+            }
+        else:
+            assert DECLARATION_PROPERTY not in properties
+
+
+def test_serial_junit_has_no_declaration_property(pytester, tmp_path):
+    pytester.makepyfile(test_marked=MARKED)
+    pytester.makefile(".toml", pyproject=TOML)
+    junit = tmp_path / "junit.xml"
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        "--junitxml", str(junit), "--vv-evidence", str(out)
+    )
+    result.assert_outcomes(passed=3, skipped=1)
+    root = ET.parse(junit).getroot()
+    assert len(root.findall(".//testcase")) == 4
+    assert not any(
+        prop.attrib["name"].startswith("ineedvalidation")
+        for prop in root.findall(".//property")
+    )
+    assert len(json.loads(out.read_text())["tests"]) == 3
+
+
+@pytest.mark.parametrize("relative_root", [".", "sub/dir"])
+def test_root_is_relative_to_git_top_level(pytester, tmp_path, relative_root):
+    subprocess.run(["git", "init", str(pytester.path)], check=True, capture_output=True)
+    suite = pytester.path / relative_root
+    suite.mkdir(parents=True, exist_ok=True)
+    (suite / "pyproject.toml").write_text(TOML)
+    (suite / "test_marked.py").write_text(MARKED)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess(
+        str(suite), "--rootdir", str(suite), "--vv-evidence", str(out)
+    )
+    result.assert_outcomes(passed=3, skipped=1)
+    data = json.loads(out.read_text())
+    assert data["root"] == relative_root
+    assert EvidenceFile.from_dict(data).root == relative_root
+
+
+def test_root_is_null_outside_git_repository(pytester, tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(pytester.path.parent))
+    pytester.makepyfile(test_marked=MARKED)
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest_subprocess("--vv-evidence", str(out))
+    result.assert_outcomes(passed=3, skipped=1)
+    assert json.loads(out.read_text())["root"] is None
+
+
+def test_1_0_ledger_missing_mode_reads_as_run():
+    data = json.loads((HIER.parent / "ledger-1.0.json").read_text())
+    assert "mode" not in data
+    loaded = EvidenceFile.from_dict(data)
+    assert loaded.mode == "run"
+    assert loaded.to_dict()["mode"] == "run"
+
+
+def test_1_0_ledger_missing_root_reads_as_null():
+    data = json.loads((HIER.parent / "ledger-1.0.json").read_text())
+    assert "root" not in data
+    loaded = EvidenceFile.from_dict(data)
+    assert loaded.root is None
+    assert loaded.to_dict()["root"] is None

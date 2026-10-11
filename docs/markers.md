@@ -160,6 +160,7 @@ The file lists every marked or defaulted test with the outcome it reached:
 
 ```json
 {"library": "mylib", "commit": "abc1234", "recorded": "2026-09-04T15:00:00Z",
+ "mode": "run", "root": ".",
  "tests": [{"nodeid": "tests/test_kernels.py::test_sum", "case": "kernel-sum",
             "evidence": "code-verification", "srq": "summation error",
             "reference_code": null, "refined_parameter": null, "referent": null,
@@ -169,13 +170,36 @@ The file lists every marked or defaulted test with the outcome it reached:
             "seam": null, "outcome": "passed"}]}
 ```
 
-Under `--collect-only` every outcome is `null`, which is the cheap way to see what a
-repository claims without running anything. In a real run the outcomes are filled in,
+Under `--collect-only` the file has `mode: "collect-only"` and every outcome is
+`null`, which is the cheap way to see what a repository claims without running
+anything. In a real run `mode` is `"run"` and the outcomes are filled in,
 and the difference matters: evidence that passed is demonstrated, while evidence that
 was marked and then skipped is only claimed. The package never decides whether a test
 without its reference data should fail or skip; that policy stays with the repository.
 Use `--vv-library` to override the recorded name for one run.
 
+Collection also supports pytest-xdist:
+
+```console
+$ pytest -n 2 --vv-evidence evidence/mylib.json
+```
+
+Each worker collects complete declarations, carries them on test reports, and
+sends the full collection to the controller when it shuts down. Only the controller
+writes the ledger, with one record per declared node id, including deselected and
+unrun tests with a `null` outcome. Outcomes include setup, call and teardown: an
+assertion in the test body is `failed`, and a fixture error in setup or after a
+passing body is `error`. A worker crash reported by xdist is also `error`, including
+a crash before setup reports. A surviving worker supplies the declarations when
+another worker crashes. Serial reports and serial JUnit XML carry no declaration
+property, while under xdist JUnit XML may include the `ineedvalidation.declaration`
+property carried by worker reports.
+
+`root` records the pytest rootdir relative to the Git repository's top level, using
+forward slashes: `"."` for the repository root or, for example, `"sub/dir"` for a
+nested suite. Outside a Git repository it is `null`.
+
 A 1.0 ledger still loads. Missing keyword fields, including `basis` and
-`acceptance`, read as null, and the new metadata does not change the evidence
-summary or plain lint output.
+`acceptance`, read as null; missing `mode` reads as `"run"` and missing `root` as
+null. The new metadata does not change the evidence summary or plain lint output
+for existing ledgers.

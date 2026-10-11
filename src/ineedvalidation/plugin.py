@@ -9,6 +9,7 @@ defaulted test and writes them all to one JSON file at the end of the session.
 import json
 import subprocess
 import tomllib
+import warnings
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +18,17 @@ import pytest
 
 from ineedvalidation.marks import MARK_CASE, MARK_REGRESSION, MARK_SEAM, validate_case
 from ineedvalidation.schema import EvidenceFile, TestRecord
+
+DECLARATION_PROPERTY = "ineedvalidation.declaration"
+DECLARATIONS_KEY = "ineedvalidation.declarations"
+OUTCOME_SEVERITY = {
+    "skipped": 0,
+    "passed": 1,
+    "xfailed": 2,
+    "xpassed": 3,
+    "failed": 4,
+    "error": 5,
+}
 
 MARKER_HELP = {
     MARK_CASE: (
@@ -101,20 +113,25 @@ def match_default(relpath, defaults):
 
 
 def _outcome(report, current):
-    """The outcome a phase report implies, or None when it says nothing new."""
-    if report.when == "setup" and report.skipped:
-        return "skipped"
-    if report.when == "call":
+    """Fold a phase report by severity, or return None for an irrelevant phase."""
+    if report.when in ("setup", "teardown", "???") and report.failed:
+        outcome = "error"
+    elif report.when == "setup" and report.skipped:
+        outcome = "skipped"
+    elif report.when == "call":
         if hasattr(report, "wasxfail"):
-            return "xpassed" if report.passed else "xfailed"
-        if report.failed:
-            return "failed"
-        if report.skipped:
-            return "skipped"
-        return "passed"
-    if report.when == "teardown" and report.failed and current in (None, "passed"):
-        return "error"
-    return None
+            outcome = "xpassed" if report.passed else "xfailed"
+        elif report.failed:
+            outcome = "failed"
+        elif report.skipped:
+            outcome = "skipped"
+        else:
+            outcome = "passed"
+    else:
+        return None
+    if current is None or OUTCOME_SEVERITY[outcome] > OUTCOME_SEVERITY[current]:
+        return outcome
+    return current
 
 
 def _git_commit(rootdir):
@@ -131,6 +148,27 @@ def _git_commit(rootdir):
     return result.stdout.strip() or None
 
 
+def _git_root(rootdir):
+    """The pytest rootdir relative to its git repository, or None."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(rootdir), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        return (
+            Path(rootdir)
+            .resolve()
+            .relative_to(Path(result.stdout.strip()).resolve())
+            .as_posix()
+        )
+    except (OSError, ValueError):
+        return None
+
+
 class EvidenceCollector:
     """Turn marked test items into records and write them at the end of a run."""
 
@@ -138,17 +176,45 @@ class EvidenceCollector:
         """Read the settings for the repository under test."""
         self.config = config
         self.records = {}
+        self.outcomes = {}
+        self.had_workers = False
+        self.received_declarations = False
         library, self.defaults = settings
         self.library = (
             config.getoption("--vv-library") or library or config.rootpath.name
         )
 
+    @pytest.hookimpl(tryfirst=True)
     def pytest_collection_modifyitems(self, items):
-        """Build one record per marked or defaulted item."""
+        """Capture declarations before deselection, including tests never run."""
+        worker = hasattr(self.config, "workerinput")
         for item in items:
             record = self._record(item)
             if record is not None:
                 self.records[item.nodeid] = record
+                if worker:
+                    item.user_properties.append(
+                        (DECLARATION_PROPERTY, record.to_dict())
+                    )
+        if worker:
+            self.config.workeroutput[DECLARATIONS_KEY] = [
+                record.to_dict() for record in self.records.values()
+            ]
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_testnodedown(self, node, error):
+        """Merge worker declarations without overwriting reported outcomes."""
+        self.had_workers = True
+        workeroutput = getattr(node, "workeroutput", {})
+        if DECLARATIONS_KEY in workeroutput:
+            self.received_declarations = True
+        for declaration in workeroutput.get(DECLARATIONS_KEY, []):
+            record = TestRecord.from_dict(declaration)
+            # The declaration from the report that ran the test is kept.
+            self.records.setdefault(
+                record.nodeid,
+                replace(record, outcome=self.outcomes.get(record.nodeid)),
+            )
 
     def _record(self, item):
         """The record an item implies, or None when it declares nothing."""
@@ -204,15 +270,28 @@ class EvidenceCollector:
 
     def pytest_runtest_logreport(self, report):
         """Fold each phase report into the record's outcome."""
+        # Crash reports have no declaration and can precede a surviving worker's
+        # collection payload. Keep their outcomes until declarations arrive.
+        outcome = _outcome(report, self.outcomes.get(report.nodeid))
+        if outcome is not None:
+            self.outcomes[report.nodeid] = outcome
         record = self.records.get(report.nodeid)
         if record is None:
-            return
-        outcome = _outcome(report, record.outcome)
-        if outcome is not None:
-            self.records[report.nodeid] = replace(record, outcome=outcome)
+            for name, declaration in report.user_properties:
+                if name == DECLARATION_PROPERTY:
+                    record = TestRecord.from_dict(declaration)
+                    self.records[report.nodeid] = record
+                    break
+            if record is None:
+                return
+        self.records[report.nodeid] = replace(
+            record, outcome=self.outcomes.get(report.nodeid)
+        )
 
     def pytest_sessionfinish(self, session, exitstatus):
-        """Write the evidence file."""
+        """Write the merged evidence file from the controller only."""
+        if hasattr(self.config, "workerinput"):
+            return
         target = Path(self.config.getoption("--vv-evidence"))
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = EvidenceFile(
@@ -220,7 +299,16 @@ class EvidenceCollector:
             commit=_git_commit(self.config.rootpath),
             recorded=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             tests=tuple(self.records[key] for key in sorted(self.records)),
+            mode="collect-only" if self.config.option.collectonly else "run",
+            root=_git_root(self.config.rootpath),
         )
         target.write_text(
             json.dumps(payload.to_dict(), indent=1, allow_nan=False) + "\n"
         )
+        if self.had_workers and not self.received_declarations:
+            warnings.warn(
+                f"Evidence ledger {target} may be incomplete: "
+                "no worker delivered its declarations payload.",
+                pytest.PytestWarning,
+                stacklevel=2,
+            )

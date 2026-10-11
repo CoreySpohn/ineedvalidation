@@ -23,7 +23,7 @@ dependencies = ["pytest>=8"]
 [project.optional-dependencies]
 render = ["pyyaml>=6"]
 docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython"]
-test = ["pytest-cov", "pyyaml>=6"]
+test = ["pytest-cov", "pytest-xdist", "pyyaml>=6"]
 dev = ["pre-commit"]
 
 [project.urls]

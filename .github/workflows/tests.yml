@@ -36,3 +36,5 @@ jobs:
 
     - name: Run tests
       run: .venv/bin/pytest tests/ -v --tb=short
+      env:
+        REQUIRE_XDIST: "1"
