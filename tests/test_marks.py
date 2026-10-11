@@ -33,7 +33,28 @@ def test_case_mark_carries_arguments():
         "reference_code": "other-code",
         "refined_parameter": None,
         "referent": None,
+        "reference_model": None,
+        "alternative": None,
     }
+
+
+@pytest.mark.parametrize(
+    ("keyword", "owner", "kind"),
+    [
+        (keyword, owner, kind)
+        for keyword, owner in (
+            ("reference_model", "solution-verification"),
+            ("alternative", "uncertainty-quantification"),
+        )
+        for kind in vv.EVIDENCE_KINDS
+        if kind != owner
+    ],
+)
+def test_kind_keyword_rejects_each_other_kind(keyword, owner, kind):
+    with pytest.raises(ValueError) as error:
+        vv.case("some-case", kind, **{keyword: "comparison model"})
+    assert keyword in str(error.value)
+    assert owner in str(error.value)
 
 
 def test_markers_registered_under_strict_markers(pytester):

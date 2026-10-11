@@ -13,8 +13,18 @@ import ineedvalidation as vv
 def test_matches_closed_form():
     ...
 
-@vv.case("free-space-propagation", "solution-verification", refined_parameter="grid-spacing")
+@vv.case(
+    "free-space-propagation", "solution-verification",
+    refined_parameter="grid-spacing", reference_model="full-resolution propagation",
+)
 def test_second_order_in_the_step():
+    ...
+
+@vv.case(
+    "free-space-propagation", "uncertainty-quantification",
+    alternative="alternative propagation model",
+)
+def test_sensitivity_to_model_choice():
     ...
 
 @vv.case("free-space-propagation", "cross-code-benchmark", reference_code="other-code")
@@ -34,13 +44,17 @@ def test_frozen_output():
     ...
 ```
 
-Evidence kinds: `code-verification`, `solution-verification`, `cross-code-benchmark`, `validation` (measured data only) and `uncertainty-quantification`. They are spelled out rather than lettered so a marked test reads without a key. `reference_code=` belongs to a cross-code benchmark, `refined_parameter=` to solution verification and `referent=` to validation; each raises when used with another kind, so a mislabelled test fails at import. Regression tests claim no kind of evidence.
+Evidence kinds: `code-verification`, `solution-verification`, `cross-code-benchmark`, `validation` (measured data only) and `uncertainty-quantification`. They are spelled out rather than lettered so a marked test reads without a key. `reference_code=` belongs to a cross-code benchmark, `refined_parameter=` and `reference_model=` to solution verification, `referent=` to validation and `alternative=` to uncertainty quantification; each raises when used with another kind, so a mislabelled test fails at import. Regression tests claim no kind of evidence.
+
+`reference_model` names a reference computation of the same governing probabilistic model and assumptions as the reduced model under test, with its own numerical error quantified (`acceptance.reference_error`); a model with different physics is not a reference model, and that comparison is uncertainty quantification with `alternative`.
+
+`alternative` names the alternative model compared with the baseline; such a comparison is a sensitivity analysis, not an estimate of model-form uncertainty.
 
 The markers register through a pytest plugin entry point, so installing the package is the only setup a repository needs.
 
 ## Tagging by path
 
-A table in `pyproject.toml` assigns a case and evidence kind by test path, so the tagging cost is per file or directory rather than per test. The longest matching prefix wins, and an explicit marker overrides the table.
+A table in `pyproject.toml` assigns a case and evidence kind by test path, so the tagging cost is per file or directory rather than per test. The longest matching prefix wins, and an explicit marker replaces the default entirely, including optional keyword fields; no fields are merged.
 
 ```toml
 [tool.pytest.ini_options]
@@ -52,6 +66,8 @@ library = "mylib"
 [tool.ineedvalidation.defaults]
 "tests/test_kernel.py" = { case = "free-space-propagation", evidence = "code-verification" }
 "tests/benchmark/" = { case = "free-space-propagation", evidence = "cross-code-benchmark" }
+"tests/convergence/" = { case = "free-space-propagation", evidence = "solution-verification", reference_model = "full-resolution propagation" }
+"tests/sensitivity/" = { case = "free-space-propagation", evidence = "uncertainty-quantification", alternative = "alternative propagation model" }
 ```
 
 Paths are matched relative to the pytest rootdir. A `[tool.pytest.ini_options]` table in the same `pyproject.toml` pins the rootdir to the repository; without one, pytest can settle on a directory above it and no default matches.

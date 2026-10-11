@@ -1,0 +1,13 @@
+{
+ "library": "widgetlib",
+ "commit": "0123456",
+ "recorded": "2026-09-04T15:00:00Z",
+ "tests": [
+  {
+   "nodeid": "tests/test_kernel.py::test_sum",
+   "case": "kernel-sum",
+   "evidence": "code-verification",
+   "outcome": "passed"
+  }
+ ]
+}

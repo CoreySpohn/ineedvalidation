@@ -15,9 +15,18 @@ def test_matches_closed_form():
 
 
 @vv.case(
-    "free-space-propagation", "solution-verification", refined_parameter="grid-spacing"
+    "free-space-propagation", "solution-verification",
+    refined_parameter="grid-spacing", reference_model="full-resolution propagation",
 )
 def test_second_order_in_the_step():
+    ...
+
+
+@vv.case(
+    "free-space-propagation", "uncertainty-quantification",
+    alternative="alternative propagation model",
+)
+def test_sensitivity_to_model_choice():
     ...
 
 
@@ -56,11 +65,21 @@ two are unrelated, which is why neither is abbreviated.
 `srq` is optional and names the system response quantity the test measures. When the
 declarations are linted against a hierarchy, the value must be one the node lists.
 
-Three optional keywords each belong to exactly one kind, and using one with the
+Five optional keywords each belong to exactly one kind, and using one with the
 wrong kind raises: `reference_code` for a cross-code benchmark, `refined_parameter`
-for solution verification, and `referent` for validation. Each names what it holds,
+and `reference_model` for solution verification, `referent` for validation, and
+`alternative` for uncertainty quantification. Each names what it holds,
 so a value filed under the wrong one fails at import rather than sitting unnoticed
 in the ledger.
+
+`reference_model` names a reference computation of the same governing probabilistic
+model and assumptions as the reduced model under test, with its own numerical error
+quantified (`acceptance.reference_error`); a model with different physics is not
+a reference model, and that comparison is uncertainty quantification with
+`alternative`.
+
+`alternative` names the alternative model compared with the baseline; such a
+comparison is a sensitivity analysis, not an estimate of model-form uncertainty.
 
 `seam(producer, consumer, case=...)` marks an absolute-scale anchor test across an
 interface between two libraries. Shape, ratio and fitted-scale tests are scale blind,
@@ -84,10 +103,13 @@ library = "mylib"
 [tool.ineedvalidation.defaults]
 "tests/validation/" = { case = "free-space-propagation", evidence = "cross-code-benchmark" }
 "tests/test_kernels.py" = { case = "kernel-sum", evidence = "code-verification" }
+"tests/convergence/" = { case = "free-space-propagation", evidence = "solution-verification", reference_model = "full-resolution propagation" }
+"tests/sensitivity/" = { case = "free-space-propagation", evidence = "uncertainty-quantification", alternative = "alternative propagation model" }
 ```
 
 The longest matching prefix wins. An explicit marker, on the function or in a module
-level `pytestmark`, overrides the default entirely. `library` names the repository in
+level `pytestmark`, overrides the default entirely, including optional keyword
+fields; no fields are merged. `library` names the repository in
 the evidence file; without it the name of the root directory is used.
 
 ## Writing the evidence file
@@ -103,6 +125,7 @@ The file lists every marked or defaulted test with the outcome it reached:
  "tests": [{"nodeid": "tests/test_kernels.py::test_sum", "case": "kernel-sum",
             "evidence": "code-verification", "srq": "summation error",
             "reference_code": null, "refined_parameter": null, "referent": null,
+            "reference_model": null, "alternative": null,
             "seam": null, "outcome": "passed"}]}
 ```
 

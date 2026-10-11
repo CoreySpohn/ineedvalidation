@@ -1,5 +1,9 @@
 import json
 
+import pytest
+
+from ineedvalidation.schema import EvidenceFile
+
 pytest_plugins = ["pytester"]
 
 MARKED = """
@@ -113,6 +117,92 @@ def test_a_marker_overrides_a_path_default(pytester, tmp_path):
     data = json.loads(out.read_text())
     assert data["tests"][0]["case"] == "mixer"
     assert data["tests"][0]["evidence"] == "solution-verification"
+
+
+@pytest.mark.parametrize(
+    ("keyword", "kind", "value"),
+    [
+        ("reference_model", "solution-verification", " Full model: grid = 0.01 "),
+        ("alternative", "uncertainty-quantification", " Alternative: closure B "),
+    ],
+)
+@pytest.mark.parametrize("source", ["decorator", "default"])
+def test_kind_keyword_round_trips_into_ledger(
+    pytester, tmp_path, keyword, kind, value, source
+):
+    declaration = (
+        "import ineedvalidation as vv\n\n"
+        f'@vv.case("mixer", {kind!r}, {keyword}={value!r})\n'
+        if source == "decorator"
+        else ""
+    )
+    pytester.makepyfile(test_model=declaration + "def test_model():\n    assert True\n")
+    settings = TOML
+    if source == "default":
+        settings += (
+            '[tool.ineedvalidation.defaults."test_model.py"]\n'
+            'case = "mixer"\n'
+            f'evidence = "{kind}"\n'
+            f'{keyword} = "{value}"\n'
+        )
+    pytester.makefile(".toml", pyproject=settings)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    data = json.loads(out.read_text())
+    record = data["tests"][0]
+    assert record["case"] == "mixer"
+    assert record["evidence"] == kind
+    assert record[keyword] == value
+    loaded = EvidenceFile.from_dict(data)
+    assert getattr(loaded.tests[0], keyword) == value
+    assert loaded.to_dict()["tests"][0][keyword] == value
+
+
+@pytest.mark.parametrize(
+    "defaults",
+    [
+        'evidence = "solution-verification"\n'
+        'refined_parameter = "grid-spacing"\nreference_model = "full model"\n',
+        'evidence = "uncertainty-quantification"\nalternative = "closure B"\n',
+        'evidence = "cross-code-benchmark"\nreference_code = "other-code"\n',
+        'evidence = "validation"\nreferent = "lab-data"\n',
+    ],
+)
+def test_explicit_marker_replaces_all_default_fields(pytester, tmp_path, defaults):
+    pytester.makepyfile(
+        test_model=(
+            "import ineedvalidation as vv\n\n"
+            '@vv.case("explicit-case", "code-verification")\n'
+            "def test_model():\n    assert True\n"
+        )
+    )
+    pytester.makefile(
+        ".toml",
+        pyproject=(
+            TOML
+            + '[tool.ineedvalidation.defaults."test_model.py"]\n'
+            + 'case = "default-case"\nsrq = "default response"\n'
+            + defaults
+        ),
+    )
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    record = json.loads(out.read_text())["tests"][0]
+    assert record == {
+        "nodeid": "test_model.py::test_model",
+        "case": "explicit-case",
+        "evidence": "code-verification",
+        "srq": None,
+        "reference_code": None,
+        "refined_parameter": None,
+        "referent": None,
+        "reference_model": None,
+        "alternative": None,
+        "seam": None,
+        "outcome": "passed",
+    }
 
 
 def test_module_level_pytestmark_is_honoured(pytester, tmp_path):

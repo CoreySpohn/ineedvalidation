@@ -1,6 +1,13 @@
+import json
+import subprocess
+import sys
+from dataclasses import asdict
+
+import pytest
 from test_nodes import HIER
 
 from ineedvalidation import evidence, nodes
+from ineedvalidation.schema import EvidenceFile
 
 
 def summary():
@@ -43,3 +50,59 @@ def test_unfiled_cases_are_listed_with_their_libraries():
 def test_records_round_trip_through_json():
     files = evidence.load_dir(HIER / "evidence")
     assert type(files[0]).from_dict(files[0].to_dict()) == files[0]
+
+
+def test_a_1_0_ledger_loads():
+    data = json.loads((HIER.parent / "ledger-1.0.json").read_text())
+    loaded = EvidenceFile.from_dict(data)
+    assert loaded.library == "widgetlib"
+    assert loaded.commit == "0123456"
+    assert loaded.recorded == "2026-09-04T15:00:00Z"
+    assert len(loaded.tests) == 1
+    record = loaded.tests[0]
+    assert record.nodeid == "tests/test_kernel.py::test_sum"
+    assert record.case == "kernel-sum"
+    assert record.evidence == "code-verification"
+    assert record.outcome == "passed"
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    [
+        "srq",
+        "reference_code",
+        "refined_parameter",
+        "referent",
+        "reference_model",
+        "alternative",
+    ],
+)
+def test_missing_keyword_field_reads_as_null(keyword):
+    data = json.loads((HIER.parent / "ledger-1.0.json").read_text())
+    assert keyword not in data["tests"][0]
+    loaded = EvidenceFile.from_dict(data)
+    assert getattr(loaded.tests[0], keyword) is None
+    assert loaded.to_dict()["tests"][0][keyword] is None
+
+
+def test_summarize_matches_1_0_golden():
+    serialized = (
+        json.dumps(
+            {key: asdict(value) for key, value in summary().items()},
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert serialized == (HIER.parent / "golden/hierarchy-summary.json").read_bytes()
+
+
+def test_plain_lint_matches_1_0_golden():
+    result = subprocess.run(
+        [sys.executable, "-m", "ineedvalidation.cli", "lint", str(HIER)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert result.stderr == b""
+    assert result.stdout == (HIER.parent / "golden/hierarchy-lint.txt").read_bytes()

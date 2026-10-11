@@ -88,6 +88,8 @@ class TestRecord:
     referent: str | None = None
     seam: tuple[str, str] | None = None
     outcome: str | None = None
+    reference_model: str | None = None
+    alternative: str | None = None
 
     def to_dict(self) -> dict:
         """Return the JSON form of the record."""
@@ -99,6 +101,8 @@ class TestRecord:
             "reference_code": self.reference_code,
             "refined_parameter": self.refined_parameter,
             "referent": self.referent,
+            "reference_model": self.reference_model,
+            "alternative": self.alternative,
             "seam": list(self.seam) if self.seam else None,
             "outcome": self.outcome,
         }
@@ -115,6 +119,8 @@ class TestRecord:
             reference_code=data.get("reference_code"),
             refined_parameter=data.get("refined_parameter"),
             referent=data.get("referent"),
+            reference_model=data.get("reference_model"),
+            alternative=data.get("alternative"),
             seam=tuple(seam) if seam else None,
             outcome=data.get("outcome"),
         )

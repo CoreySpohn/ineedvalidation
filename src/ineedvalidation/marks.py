@@ -60,6 +60,8 @@ def case(
     reference_code=None,
     refined_parameter=None,
     referent=None,
+    reference_model=None,
+    alternative=None,
 ):
     """Declare the physical case, evidence kind and response quantity of a test.
 
@@ -73,6 +75,11 @@ def case(
         refined_parameter: for solution verification, the ordered discretization
             parameter that was refined.
         referent: for validation, the measured dataset compared against.
+        reference_model: for solution verification, a reference computation of
+            the same governing probabilistic model and assumptions, with its
+            own numerical error quantified.
+        alternative: for uncertainty quantification, the alternative model
+            compared with the baseline in a sensitivity analysis.
 
     Returns:
         A pytest mark decorator.
@@ -88,6 +95,8 @@ def case(
         ("reference_code", reference_code, CROSS_CODE_BENCHMARK),
         ("refined_parameter", refined_parameter, SOLUTION_VERIFICATION),
         ("referent", referent, VALIDATION),
+        ("reference_model", reference_model, SOLUTION_VERIFICATION),
+        ("alternative", alternative, UNCERTAINTY_QUANTIFICATION),
     ):
         if value is not None and evidence != belongs_to:
             raise ValueError(
@@ -100,6 +109,8 @@ def case(
         reference_code=reference_code,
         refined_parameter=refined_parameter,
         referent=referent,
+        reference_model=reference_model,
+        alternative=alternative,
     )
 
 

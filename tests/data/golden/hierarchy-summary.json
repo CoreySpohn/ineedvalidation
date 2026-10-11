@@ -1,0 +1,83 @@
+{
+  "benchmark-bench": {
+    "claimed": [
+      "cross-code-benchmark"
+    ],
+    "computed": true,
+    "demonstrated": [
+      "validation"
+    ],
+    "libraries": [
+      "widgetlib"
+    ],
+    "node_id": "benchmark-bench",
+    "seams": [],
+    "skipped": 1,
+    "srqs_covered": [
+      "loop residual"
+    ],
+    "tests": 2
+  },
+  "complete-system": {
+    "claimed": [],
+    "computed": false,
+    "demonstrated": [
+      "code-verification"
+    ],
+    "libraries": [
+      "widgetlib"
+    ],
+    "node_id": "complete-system",
+    "seams": [],
+    "skipped": 0,
+    "srqs_covered": [],
+    "tests": 0
+  },
+  "subsystem-mixer": {
+    "claimed": [],
+    "computed": false,
+    "demonstrated": [
+      "code-verification"
+    ],
+    "libraries": [
+      "widgetlib"
+    ],
+    "node_id": "subsystem-mixer",
+    "seams": [],
+    "skipped": 0,
+    "srqs_covered": [],
+    "tests": 0
+  },
+  "system-front": {
+    "claimed": [],
+    "computed": false,
+    "demonstrated": [
+      "code-verification"
+    ],
+    "libraries": [
+      "widgetlib"
+    ],
+    "node_id": "system-front",
+    "seams": [],
+    "skipped": 0,
+    "srqs_covered": [],
+    "tests": 0
+  },
+  "unit-kernel": {
+    "claimed": [],
+    "computed": true,
+    "demonstrated": [
+      "code-verification"
+    ],
+    "libraries": [
+      "widgetlib"
+    ],
+    "node_id": "unit-kernel",
+    "seams": [],
+    "skipped": 0,
+    "srqs_covered": [
+      "summation error"
+    ],
+    "tests": 1
+  }
+}

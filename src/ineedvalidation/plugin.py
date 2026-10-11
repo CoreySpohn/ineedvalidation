@@ -2,7 +2,7 @@
 
 Loaded automatically through the ``pytest11`` entry point once the package is
 installed, so a repository declares nothing in its own configuration. Passing
-``--inv-evidence PATH`` turns on the collector, which records every marked or
+``--vv-evidence PATH`` turns on the collector, which records every marked or
 defaulted test and writes them all to one JSON file at the end of the session.
 """
 
@@ -19,7 +19,8 @@ from ineedvalidation.schema import EvidenceFile, TestRecord
 MARKER_HELP = {
     MARK_CASE: (
         "vv_case(slug, evidence, srq=None, reference_code=None, "
-        "refined_parameter=None, referent=None): the physical case, kind of "
+        "refined_parameter=None, referent=None, reference_model=None, "
+        "alternative=None): the physical case, kind of "
         "evidence and system response quantity a test exercises "
         "(use ineedvalidation.case)"
     ),
@@ -138,12 +139,15 @@ class EvidenceCollector:
         regression = item.get_closest_marker(MARK_REGRESSION) is not None
         case = evidence = srq = seam = None
         reference_code = refined_parameter = referent = None
+        reference_model = alternative = None
         if case_mark is not None:
             case, evidence = case_mark.args[0], case_mark.args[1]
             srq = case_mark.kwargs.get("srq")
             reference_code = case_mark.kwargs.get("reference_code")
             refined_parameter = case_mark.kwargs.get("refined_parameter")
             referent = case_mark.kwargs.get("referent")
+            reference_model = case_mark.kwargs.get("reference_model")
+            alternative = case_mark.kwargs.get("alternative")
         elif seam_mark is None and not regression:
             values = match_default(Path(item.location[0]).as_posix(), self.defaults)
             if values is None:
@@ -153,6 +157,8 @@ class EvidenceCollector:
             reference_code = values.get("reference_code")
             refined_parameter = values.get("refined_parameter")
             referent = values.get("referent")
+            reference_model = values.get("reference_model")
+            alternative = values.get("alternative")
         if seam_mark is not None:
             seam = (seam_mark.args[0], seam_mark.args[1])
             case = seam_mark.kwargs.get("case") or case
@@ -166,6 +172,8 @@ class EvidenceCollector:
             reference_code=reference_code,
             refined_parameter=refined_parameter,
             referent=referent,
+            reference_model=reference_model,
+            alternative=alternative,
             seam=seam,
         )
 
