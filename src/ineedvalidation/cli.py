@@ -45,7 +45,11 @@ def build_parser():
         command.add_argument("--nodes", help="node notes directory")
         command.add_argument("--evidence", help="evidence files directory")
     lint = sub.choices["lint"]
-    lint.add_argument("--library-map", help="file listing the known library names")
+    lint.add_argument(
+        "--library-map",
+        action="append",
+        help="file listing the known library names (repeat to combine files)",
+    )
     lint.add_argument(
         "--require-metadata",
         action="store_true",
@@ -75,7 +79,11 @@ def _load(args):
 def _lint(args):
     """Report every problem in the hierarchy."""
     _, loaded, files, summary = _load(args)
-    library_text = Path(args.library_map).read_text() if args.library_map else None
+    library_text = (
+        "\n".join(Path(path).read_text() for path in args.library_map)
+        if args.library_map
+        else None
+    )
     # Without a ledger there is nothing to lint the notes against, so the
     # two-way rules stay off and the declared fields carry the evidence.
     problems = nodes.lint(

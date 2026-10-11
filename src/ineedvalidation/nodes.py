@@ -81,6 +81,13 @@ def lint(
 ) -> list[str]:
     """Report every rule violation in the hierarchy, as one line each."""
     problems: list[str] = []
+    owners: dict[str, list[str]] = {}
+    for nid, node in nodes.items():
+        for case in dict.fromkeys(node.cases):
+            owners.setdefault(case, []).append(nid)
+    for case, node_ids in owners.items():
+        if len(node_ids) > 1:
+            problems.append(f"case {case} is owned by nodes {' and '.join(node_ids)}")
     for nid, node in nodes.items():
         if node.path is not None and node.path.stem != nid:
             problems.append(f"{nid}: file name {node.path.name} does not match id")

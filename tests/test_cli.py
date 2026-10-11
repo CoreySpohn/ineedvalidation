@@ -30,6 +30,75 @@ def test_lint_without_a_ledger_skips_the_two_way_rules(capsys, tmp_path):
     assert "LINT:" not in capsys.readouterr().out
 
 
+def test_lint_reports_two_notes_owning_one_case_and_returns_one(capsys, tmp_path):
+    hierarchy = copy(tmp_path)
+    shutil.rmtree(hierarchy / "evidence")
+    note = hierarchy / "nodes" / "complete-system.md"
+    note.write_text(note.read_text().replace("cases: []", "cases:\n- kernel-sum"))
+    assert cli.main(["lint", str(hierarchy)]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == (
+        "LINT: case kernel-sum is owned by nodes complete-system and unit-kernel\n"
+        "5 nodes, complete=1, system=1, subsystem=1, benchmark=1, unit=1\n"
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_repeated_library_maps_accept_either_file_and_report_neither(
+    capsys, tmp_path, reverse
+):
+    hierarchy = copy(tmp_path)
+    shutil.rmtree(hierarchy / "evidence")
+    note = hierarchy / "nodes" / "complete-system.md"
+    note.write_text(
+        note.read_text().replace("- widgetlib", "- firstlib\n- secondlib\n- unknownlib")
+    )
+    first = tmp_path / "libraries.md"
+    first.write_text("widgetlib\nfirstlib\n")
+    second = tmp_path / "extra-libraries.md"
+    second.write_text("secondlib\n")
+    maps = [second, first] if reverse else [first, second]
+    argv = ["lint", str(hierarchy)]
+    for path in maps:
+        argv.extend(["--library-map", str(path)])
+    assert cli.main(argv) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == (
+        "LINT: complete-system: library unknownlib not in the library list\n"
+        "5 nodes, complete=1, system=1, subsystem=1, benchmark=1, unit=1\n"
+    )
+    note.write_text(note.read_text().replace("- unknownlib\n", ""))
+    assert cli.main(argv) == 0
+    assert capsys.readouterr().out == (
+        "5 nodes, complete=1, system=1, subsystem=1, benchmark=1, unit=1\n"
+    )
+
+
+@pytest.mark.parametrize("listed", [True, False])
+def test_one_library_map_preserves_1_0_output(capsys, tmp_path, listed):
+    library_map = tmp_path / "libraries.md"
+    library_map.write_text("widgetlib\n" if listed else "otherlib\n")
+    assert cli.main(["lint", str(HIER), "--library-map", str(library_map)]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    expected = (HIER.parent / "golden/hierarchy-lint.txt").read_text()
+    if not listed:
+        expected = (
+            "LINT: benchmark-bench: library widgetlib not in the library list\n"
+            "LINT: complete-system: library widgetlib not in the library list\n"
+            "LINT: subsystem-mixer: library widgetlib not in the library list\n"
+            "LINT: subsystem-mixer: no evidence, 1 case(s) declared\n"
+            "LINT: system-front: library widgetlib not in the library list\n"
+            "LINT: system-front: no evidence, 1 case(s) declared\n"
+            "LINT: unit-kernel: library widgetlib not in the library list\n"
+            "LINT: case not-filed is not owned by any node (from widgetlib)\n"
+            "5 nodes, complete=1, system=1, subsystem=1, benchmark=1, unit=1\n"
+        )
+    assert captured.out.encode("utf-8") == expected.encode("utf-8")
+
+
 def test_scaffold_writes_one_stub_per_unfiled_case(tmp_path):
     hierarchy = copy(tmp_path)
     assert cli.main(["scaffold", str(hierarchy)]) == 0

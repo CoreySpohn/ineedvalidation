@@ -1,6 +1,6 @@
 import json
 import shutil
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 from test_nodes import HIER
@@ -15,6 +15,34 @@ def loaded():
 
 def test_clean_hierarchy_lints_clean():
     assert nodes.lint(loaded()) == []
+
+
+def test_two_nodes_owning_one_case_are_reported_without_changing_summary():
+    got = loaded()
+    got["complete-system"] = replace(got["complete-system"], cases=("kernel-sum",))
+    assert nodes.lint(got) == [
+        "case kernel-sum is owned by nodes complete-system and unit-kernel"
+    ]
+    summary = summary_for(got)
+    serialized = (
+        json.dumps(
+            {key: asdict(value) for key, value in summary.items()},
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert serialized == (HIER.parent / "golden/hierarchy-summary.json").read_bytes()
+
+
+def test_repeating_a_case_in_one_node_does_not_add_an_owner():
+    got = loaded()
+    got["unit-kernel"] = replace(got["unit-kernel"], cases=("kernel-sum", "kernel-sum"))
+    assert nodes.lint(got) == []
+    got["complete-system"] = replace(got["complete-system"], cases=("kernel-sum",))
+    assert nodes.lint(got) == [
+        "case kernel-sum is owned by nodes complete-system and unit-kernel"
+    ]
 
 
 def test_file_name_must_match_the_id():

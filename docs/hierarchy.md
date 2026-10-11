@@ -46,7 +46,8 @@ domain_overlap:
 `level` is one of `complete`, `system`, `subsystem`, `benchmark` or `unit`, and a node's
 id must start with it, so the identifier states the level rather than encoding it.
 `couples_to` names the nodes one level up that this node feeds. `cases` is the join key:
-every slug listed here collects the tests that declare it. `referent_status` is one of
+every slug listed here collects the tests that declare it. Each case must be owned by
+only one node. `referent_status` is one of
 `none`, `identified`, `requested` or `in-hand`. `validation_level` is the
 NASA-STD-7009B Table 9 level claimed for the node, from 0 to 4.
 
@@ -73,6 +74,19 @@ needs a referent in hand, validation evidence, and a `domain_overlap` naming the
 the referent covers; a level of 3 or above is only meaningful at the complete level,
 because those levels describe measurements on the real system. No axis may appear in
 both halves of a `domain_overlap`.
+
+A case listed by multiple nodes is reported as `case X is owned by nodes A and B`,
+even without evidence files. This check does not change the evidence summary.
+
+Use `--library-map` to check planned library names against a file. Repeat the flag
+to combine multiple lists; a library may appear in any of the files:
+
+```console
+$ ineedvalidation lint hierarchy/ --library-map libraries.md --library-map extra-libraries.md
+```
+
+Lint reports a planned library absent from every supplied file. With one file,
+the library check and output are unchanged.
 
 When evidence files are present the lint also runs in the other direction: a case
 named by a test must belong to some node, a node that declares cases must have at
