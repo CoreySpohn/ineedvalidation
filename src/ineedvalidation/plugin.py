@@ -6,7 +6,9 @@ installed, so a repository declares nothing in its own configuration. Passing
 defaulted test and writes them all to one JSON file at the end of the session.
 """
 
+import hashlib
 import json
+import math
 import subprocess
 import tomllib
 import warnings
@@ -21,6 +23,7 @@ from ineedvalidation.schema import EvidenceFile, TestRecord
 
 DECLARATION_PROPERTY = "ineedvalidation.declaration"
 DECLARATIONS_KEY = "ineedvalidation.declarations"
+RESULT_PROPERTY = "ineedvalidation.result"
 OUTCOME_SEVERITY = {
     "skipped": 0,
     "passed": 1,
@@ -90,6 +93,63 @@ def pytest_configure(config):
         config.pluginmanager.register(
             EvidenceCollector(config, settings), "vv-evidence"
         )
+
+
+def _check_number(name, value):
+    """Require a finite numeric result or interval endpoint."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a finite number")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number")
+
+
+def _record_file(rootdir, name, value):
+    """Hash a file addressed relative to the pytest rootdir."""
+    if value is None:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        raise ValueError(f"{name} must be a path relative to rootdir")
+    root = rootdir.resolve()
+    target = (root / path).resolve()
+    if not target.is_relative_to(root):
+        raise ValueError(f"{name} must be a path within rootdir")
+    return {
+        "path": path.as_posix(),
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+    }
+
+
+@pytest.fixture
+def vv_record(request):
+    """Return a callable that validates and records measured test results."""
+
+    def record(
+        value=None, interval=None, reference=None, artifact=None, manifest=None, **point
+    ):
+        if value is not None:
+            _check_number("value", value)
+        if interval is not None:
+            if not isinstance(interval, (list, tuple)) or len(interval) != 2:
+                raise ValueError("interval must contain exactly two endpoints")
+            for endpoint in interval:
+                _check_number("interval endpoint", endpoint)
+            if interval[0] > interval[1]:
+                raise ValueError("interval must have lo <= hi")
+        entry = {
+            "value": value,
+            "interval": list(interval) if interval is not None else None,
+            "reference": reference,
+            "artifact": _record_file(request.config.rootpath, "artifact", artifact),
+            "manifest": _record_file(request.config.rootpath, "manifest", manifest),
+            "point": point,
+        }
+        # Snapshot JSON data now so later mutation cannot change an earlier call.
+        entry = json.loads(json.dumps(entry, allow_nan=False))
+        if request.config.getoption("--vv-evidence"):
+            request.node.user_properties.append((RESULT_PROPERTY, entry))
+
+    return record
 
 
 def load_settings(rootdir):
@@ -269,7 +329,7 @@ class EvidenceCollector:
         )
 
     def pytest_runtest_logreport(self, report):
-        """Fold each phase report into the record's outcome."""
+        """Fold each phase report into the record's outcome and results."""
         # Crash reports have no declaration and can precede a surviving worker's
         # collection payload. Keep their outcomes until declarations arrive.
         outcome = _outcome(report, self.outcomes.get(report.nodeid))
@@ -284,8 +344,13 @@ class EvidenceCollector:
                     break
             if record is None:
                 return
+        results = [
+            entry for name, entry in report.user_properties if name == RESULT_PROPERTY
+        ]
         self.records[report.nodeid] = replace(
-            record, outcome=self.outcomes.get(report.nodeid)
+            record,
+            outcome=self.outcomes.get(report.nodeid),
+            results=results if results else record.results,
         )
 
     def pytest_sessionfinish(self, session, exitstatus):

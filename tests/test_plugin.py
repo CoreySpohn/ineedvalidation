@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import os
@@ -9,7 +10,7 @@ import pytest
 from test_marks import EXPECTED_BASES
 from test_nodes import HIER
 
-from ineedvalidation.plugin import _outcome
+from ineedvalidation.plugin import RESULT_PROPERTY, _outcome
 from ineedvalidation.schema import EvidenceFile
 
 pytest_plugins = ["pytester"]
@@ -217,6 +218,7 @@ def test_explicit_marker_replaces_all_default_fields(pytester, tmp_path, default
         "alternative": None,
         "basis": None,
         "acceptance": None,
+        "results": [],
         "seam": None,
         "outcome": "passed",
     }
@@ -385,12 +387,16 @@ import ineedvalidation as vv
 
 @vv.case("kernel-sum", "code-verification", srq="summation error",
          basis="floating-point", acceptance={"tolerance": 1e-12})
-def test_passes():
+def test_passes(vv_record):
+    vv_record(value=0.25, interval=(0.2, 0.3), reference=0.25, spacing=0.1,
+              artifact="pyproject.toml", manifest="pyproject.toml")
+    vv_record(value=0.125, spacing=0.05)
     assert True
 
 
 @vv.case("kernel-sum", "code-verification")
-def test_fails():
+def test_fails(vv_record):
+    vv_record(value=0.5)
     assert False
 
 
@@ -601,6 +607,19 @@ def test_xdist_records_each_nodeid_once(serial_and_parallel_ledgers):
     assert len(nodeids) == len(set(nodeids))
 
 
+def test_serial_and_xdist_results_are_equal(serial_and_parallel_ledgers):
+    serial, parallel = serial_and_parallel_ledgers
+    serial_results = {
+        r["nodeid"]: r["results"] for r in serial["tests"] if r["results"]
+    }
+    parallel_results = {
+        r["nodeid"]: r["results"] for r in parallel["tests"] if r["results"]
+    }
+    assert serial_results
+    assert parallel_results
+    assert serial_results == parallel_results
+
+
 @pytest.mark.parametrize("args", [["-x"], ["-k", "remaining"]])
 def test_serial_and_xdist_include_unreported_declarations(pytester, tmp_path, args):
     require_xdist()
@@ -784,6 +803,7 @@ def pytest_sessionfinish(session):
             assert properties[DECLARATION_PROPERTY] == {
                 **records[report.nodeid],
                 "outcome": None,
+                "results": [],
             }
         else:
             assert DECLARATION_PROPERTY not in properties
@@ -848,3 +868,205 @@ def test_1_0_ledger_missing_root_reads_as_null():
     loaded = EvidenceFile.from_dict(data)
     assert loaded.root is None
     assert loaded.to_dict()["root"] is None
+
+
+def result_entry(**values):
+    return {
+        "value": None,
+        "interval": None,
+        "reference": None,
+        "artifact": None,
+        "manifest": None,
+        "point": {},
+        **values,
+    }
+
+
+def test_vv_record_keeps_two_calls_in_order(pytester, tmp_path):
+    pytester.makepyfile(
+        test_results="""
+import ineedvalidation as vv
+
+@vv.case("kernel-sum", "code-verification")
+def test_results(vv_record):
+    vv_record(value=0.25, interval=(0.2, 0.3), reference=0.25, spacing=0.1)
+    vv_record(value=0.125, interval=[0.1, 0.15], reference=0.125, spacing=0.05)
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.inline_run("--vv-evidence", str(out))
+    result.assertoutcome(passed=1)
+    expected = [
+        result_entry(
+            value=0.25, interval=[0.2, 0.3], reference=0.25, point={"spacing": 0.1}
+        ),
+        result_entry(
+            value=0.125, interval=[0.1, 0.15], reference=0.125, point={"spacing": 0.05}
+        ),
+    ]
+    call = next(
+        r for r in result.getreports("pytest_runtest_logreport") if r.when == "call"
+    )
+    properties = [
+        entry for name, entry in call.user_properties if name == RESULT_PROPERTY
+    ]
+    assert properties == expected
+    data = json.loads(out.read_text(), parse_constant=reject_constant)
+    assert len(data["tests"]) == 1
+    assert data["tests"][0]["results"] == expected
+    assert EvidenceFile.from_dict(data).to_dict() == data
+
+
+@pytest.mark.parametrize("collect", [False, True])
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ('value=float("nan")', "value must be a finite number"),
+        ("interval=(2, 1)", "interval must have lo <= hi"),
+        ("interval=(1, 2, 3)", "interval must contain exactly two endpoints"),
+        ('artifact="missing.txt"', "FileNotFoundError"),
+        ('manifest="missing.json"', "FileNotFoundError"),
+    ],
+)
+def test_vv_record_invalid_input_fails_in_the_body(
+    pytester, tmp_path, arguments, message, collect
+):
+    pytester.makepyfile(
+        test_invalid=f"""
+import ineedvalidation as vv
+
+@vv.case("kernel-sum", "code-verification")
+def test_invalid(vv_record):
+    vv_record(value=1)
+    vv_record({arguments})
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest(*(["--vv-evidence", str(out)] if collect else []))
+    result.assert_outcomes(failed=1)
+    assert message in result.stdout.str()
+    if collect:
+        data = json.loads(out.read_text(), parse_constant=reject_constant)
+        assert len(data["tests"]) == 1
+        record = data["tests"][0]
+        assert record["outcome"] == "failed"
+        assert record["results"] == [result_entry(value=1)]
+    else:
+        assert not out.exists()
+
+
+@pytest.mark.parametrize("keyword", ["artifact", "manifest"])
+def test_vv_record_hashes_file_contents_at_each_call(pytester, tmp_path, keyword):
+    contents = [b"first contents\n", b"edited contents\n"]
+    pytester.makepyfile(
+        test_hash=f"""
+from pathlib import Path
+import ineedvalidation as vv
+
+@vv.case("kernel-sum", "code-verification")
+def test_hash(vv_record, request, monkeypatch, tmp_path):
+    path = request.config.rootpath / "data" / "result.txt"
+    path.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    path.write_bytes({contents[0]!r})
+    vv_record({keyword}=Path("data/result.txt"))
+    path.write_bytes({contents[1]!r})
+    vv_record({keyword}="data/result.txt")
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    entries = json.loads(out.read_text())["tests"][0]["results"]
+    assert entries == [
+        result_entry(
+            **{
+                keyword: {
+                    "path": "data/result.txt",
+                    "sha256": hashlib.sha256(b).hexdigest(),
+                }
+            }
+        )
+        for b in contents
+    ]
+    assert entries[0][keyword]["sha256"] != entries[1][keyword]["sha256"]
+
+
+def test_vv_record_keeps_results_when_assertion_fails(pytester, tmp_path):
+    pytester.makepyfile(
+        test_failure="""
+import ineedvalidation as vv
+
+@vv.case("kernel-sum", "code-verification")
+def test_failure(vv_record):
+    vv_record(value=0.5, reference=1)
+    assert False, "measured result differs"
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(failed=1)
+    record = json.loads(out.read_text())["tests"][0]
+    assert record["outcome"] == "failed"
+    assert record["results"] == [result_entry(value=0.5, reference=1)]
+
+
+def test_vv_record_without_evidence_records_nothing(pytester):
+    pytester.makepyfile(
+        test_disabled="""
+from ineedvalidation.plugin import RESULT_PROPERTY
+
+def test_disabled(vv_record, request):
+    vv_record(value=1, interval=(0, 2), reference=1, spacing=0.5)
+    assert not any(name == RESULT_PROPERTY for name, _ in request.node.user_properties)
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    before = set(pytester.path.rglob("*.json"))
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+    assert set(pytester.path.rglob("*.json")) == before
+
+
+def test_vv_record_snapshots_mutable_inputs_and_allows_empty_calls(pytester, tmp_path):
+    pytester.makepyfile(
+        test_snapshot="""
+import ineedvalidation as vv
+
+@vv.case("kernel-sum", "code-verification")
+def test_snapshot(vv_record):
+    interval = [0, 1]
+    reference = {"label": "exact solution", "value": 0.5}
+    samples = [0.25, 0.5]
+    vv_record(value=0.5, interval=interval, reference=reference, samples=samples)
+    interval[1] = 2
+    reference["value"] = 1
+    samples.append(0.75)
+    vv_record()
+"""
+    )
+    pytester.makefile(".toml", pyproject=TOML)
+    out = tmp_path / "evidence.json"
+    result = pytester.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    assert json.loads(out.read_text())["tests"][0]["results"] == [
+        result_entry(
+            value=0.5,
+            interval=[0, 1],
+            reference={"label": "exact solution", "value": 0.5},
+            point={"samples": [0.25, 0.5]},
+        ),
+        result_entry(),
+    ]
+
+
+def test_1_0_ledger_missing_results_reads_as_empty_list():
+    data = json.loads((HIER.parent / "ledger-1.0.json").read_text())
+    assert "results" not in data["tests"][0]
+    loaded = EvidenceFile.from_dict(data)
+    assert loaded.tests[0].results == []
+    assert loaded.to_dict()["tests"][0]["results"] == []

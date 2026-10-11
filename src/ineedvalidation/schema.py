@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +92,7 @@ class TestRecord:
     alternative: str | None = None
     basis: str | None = None
     acceptance: dict[str, Any] | None = None
+    results: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Return the JSON form of the record."""
@@ -107,6 +108,7 @@ class TestRecord:
             "alternative": self.alternative,
             "basis": self.basis,
             "acceptance": self.acceptance,
+            "results": self.results,
             "seam": list(self.seam) if self.seam else None,
             "outcome": self.outcome,
         }
@@ -127,6 +129,7 @@ class TestRecord:
             alternative=data.get("alternative"),
             basis=data.get("basis"),
             acceptance=data.get("acceptance"),
+            results=data.get("results", []),
             seam=tuple(seam) if seam else None,
             outcome=data.get("outcome"),
         )

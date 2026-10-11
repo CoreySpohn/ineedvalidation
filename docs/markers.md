@@ -167,8 +167,49 @@ The file lists every marked or defaulted test with the outcome it reached:
             "reference_model": null, "alternative": null,
             "basis": "floating-point",
             "acceptance": {"metric": "absolute error", "tolerance": 1e-12},
-            "seam": null, "outcome": "passed"}]}
+            "seam": null, "outcome": "passed", "results": []}]}
 ```
+
+## Recording results in the test body
+
+The plugin provides the `vv_record` fixture. Its callable has the signature
+`vv_record(value=None, interval=None, reference=None, artifact=None, manifest=None, **point)`.
+Each call appends one result, in call order, to the marked or defaulted test's
+`results` list. Results remain in the ledger when a later assertion fails.
+
+```python
+@vv.case("kernel-sum", "code-verification")
+def test_sum(vv_record):
+    vv_record(value=0.25, interval=(0.2, 0.3), reference=0.25, spacing=0.1)
+    vv_record(value=0.125, spacing=0.05, artifact="results/sum.txt")
+```
+
+Each entry contains `value`, `interval`, `reference`, `artifact`, `manifest` and
+`point`. Omitted arguments are null, and extra keywords form the `point` dictionary:
+
+```json
+{"value": 0.25, "interval": [0.2, 0.3], "reference": 0.25,
+ "artifact": null, "manifest": null, "point": {"spacing": 0.1}}
+```
+
+`value` must be a finite integer or float. An interval is a list or tuple of exactly
+two finite numbers, with the lower endpoint at most the upper endpoint. `reference`
+and point coordinates must be JSON serializable, with no NaN or infinity. Each call
+snapshots its input so subsequent changes to a mutable argument do not alter it.
+
+`artifact` and `manifest` accept strings or path objects identifying existing files
+relative to the pytest rootdir, even when the test changes its working directory.
+The paths must remain within that root. Each is recorded as
+`{"path": "results/sum.txt", "sha256": "..."}`, hashing the file's bytes at the time
+of the call. Neither file is copied or interpreted.
+
+Invalid arguments raise at the call in the test body, producing a `failed` outcome
+and adding no invalid entry. Without `--vv-evidence` the fixture still validates
+arguments and file paths, but records nothing and writes no ledger. Tests that make
+no calls have an empty `results` list. Worker reports carry results to the controller
+under pytest-xdist.
+
+## Collection modes and parallel runs
 
 Under `--collect-only` the file has `mode: "collect-only"` and every outcome is
 `null`, which is the cheap way to see what a repository claims without running
@@ -201,5 +242,5 @@ nested suite. Outside a Git repository it is `null`.
 
 A 1.0 ledger still loads. Missing keyword fields, including `basis` and
 `acceptance`, read as null; missing `mode` reads as `"run"` and missing `root` as
-null. The new metadata does not change the evidence summary or plain lint output
-for existing ledgers.
+null. Missing `results` reads as an empty list. The new metadata does not change the
+evidence summary or plain lint output for existing ledgers.
