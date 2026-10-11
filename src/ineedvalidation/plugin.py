@@ -153,13 +153,24 @@ def vv_record(request):
 
 
 def load_settings(rootdir):
-    """Return the library name and the path defaults from ``pyproject.toml``."""
-    path = Path(rootdir) / "pyproject.toml"
-    if not path.is_file():
+    """Return settings from the rootdir's pyproject or standalone TOML file."""
+    rootdir = Path(rootdir)
+    pyproject = rootdir / "pyproject.toml"
+    standalone = rootdir / "ineedvalidation.toml"
+    table = None
+    if pyproject.is_file():
+        with pyproject.open("rb") as handle:
+            data = tomllib.load(handle)
+        table = data.get("tool", {}).get("ineedvalidation")
+    if standalone.is_file():
+        if table is not None:
+            raise pytest.UsageError(
+                f"ineedvalidation settings defined in both {pyproject} and {standalone}"
+            )
+        with standalone.open("rb") as handle:
+            table = tomllib.load(handle)
+    if table is None:
         return None, {}
-    with path.open("rb") as handle:
-        data = tomllib.load(handle)
-    table = data.get("tool", {}).get("ineedvalidation", {})
     return table.get("library"), dict(table.get("defaults", {}))
 
 

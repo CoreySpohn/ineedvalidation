@@ -72,13 +72,24 @@ library = "mylib"
 
 Paths are matched relative to the pytest rootdir. A `[tool.pytest.ini_options]` table in the same `pyproject.toml` pins the rootdir to the repository; without one, pytest can settle on a directory above it and no default matches.
 
+For a test suite outside a package, use `pytest.ini` to set the rootdir and put settings in `ineedvalidation.toml` beside it:
+
+```toml
+library = "simulation-suite"
+
+[defaults]
+"tests/" = { case = "kernel-sum", evidence = "code-verification" }
+```
+
+The standalone file uses the same defaults schema and validation. A `pyproject.toml` without `[tool.ineedvalidation]` allows this fallback; defining settings in both files raises a pytest usage error naming both paths. See [test suites outside a package](docs/markers.md#test-suites-outside-a-package) for the complete setup.
+
 ## Collecting the evidence
 
 ```console
 $ pytest --vv-evidence evidence/mylib.json
 ```
 
-One JSON file per repository lists every marked or defaulted test with its case, kind of evidence, response quantity, seam and the outcome it reached, stamped with the commit. The library name comes from `--vv-library NAME`, else `[tool.ineedvalidation] library`, else the rootdir name.
+One JSON file per repository lists every marked or defaulted test with its case, kind of evidence, response quantity, seam and the outcome it reached, stamped with the commit. The library name comes from `--vv-library NAME`, else `library` in the settings file (`[tool.ineedvalidation]` in `pyproject.toml` or top-level in `ineedvalidation.toml`), else the rootdir name.
 
 ## Linting, scaffolding and rendering a hierarchy
 

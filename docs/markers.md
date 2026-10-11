@@ -150,6 +150,39 @@ even for an unused prefix or a run without `--vv-evidence`. An invalid entry rai
 `pytest.UsageError` naming its prefix. `library` names the repository in
 the evidence file; without it the name of the root directory is used.
 
+## Test suites outside a package
+
+A suite can collect evidence without a package or a `pyproject.toml`. Put a
+`pytest.ini` in the suite's root directory to set the pytest rootdir:
+
+```ini
+[pytest]
+testpaths = tests
+```
+
+Put an `ineedvalidation.toml` beside it, with a top-level `library` and a
+`[defaults]` table:
+
+```toml
+library = "simulation-suite"
+
+[defaults]
+"tests/" = { case = "kernel-sum", evidence = "code-verification", basis = "floating-point", acceptance = { tolerance = 1e-12 } }
+```
+
+The defaults use the same schema and configuration-time validation as those in
+`pyproject.toml`. Paths and recorded node ids are relative to the pytest rootdir,
+and explicit markers replace every field of a path default. The settings file
+alone does not set pytest's rootdir.
+
+The plugin reads settings only from that rootdir. It uses
+`[tool.ineedvalidation]` in `pyproject.toml` when present, otherwise it reads
+`ineedvalidation.toml`. A `pyproject.toml` that contains only
+`[tool.pytest.ini_options]` can set the rootdir while allowing the standalone
+settings. Defining settings in both files raises `pytest.UsageError` naming both
+paths; choose one settings file. `--vv-library NAME` overrides the library name
+from either file for a single run.
+
 ## Writing the evidence file
 
 ```console

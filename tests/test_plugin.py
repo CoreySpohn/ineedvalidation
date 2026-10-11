@@ -42,6 +42,138 @@ def test_unmarked():
 
 TOML = '[tool.pytest.ini_options]\n[tool.ineedvalidation]\nlibrary = "widgetlib"\n'
 
+STANDALONE_TOML = """
+library = "widgetlib"
+
+[defaults."tests/"]
+case = "kernel-sum"
+evidence = "code-verification"
+srq = "summation error"
+basis = "floating-point"
+acceptance = { tolerance = 1e-12 }
+"""
+
+
+@pytest.fixture
+def settings_suite(pytester):
+    pytester.makepyfile(**{"tests/test_defaulted": "def test_default():\n    pass\n"})
+    return pytester
+
+
+def test_pytest_ini_and_standalone_settings_apply(settings_suite, tmp_path):
+    settings_suite.makefile(".ini", pytest="[pytest]\ntestpaths = tests\n")
+    settings_suite.makefile(".toml", ineedvalidation=STANDALONE_TOML)
+    out = tmp_path / "evidence.json"
+    result = settings_suite.runpytest("tests", "--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    data = json.loads(out.read_text())
+    assert data["library"] == "widgetlib"
+    assert len(data["tests"]) == 1
+    record = data["tests"][0]
+    assert record["nodeid"] == "tests/test_defaulted.py::test_default"
+    assert record["case"] == "kernel-sum"
+    assert record["evidence"] == "code-verification"
+    assert record["srq"] == "summation error"
+    assert record["basis"] == "floating-point"
+    assert record["acceptance"] == {"tolerance": 1e-12}
+    assert record["outcome"] == "passed"
+
+
+def test_pytest_only_pyproject_allows_standalone_settings(settings_suite, tmp_path):
+    settings_suite.makefile(
+        ".toml", pyproject='[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+    )
+    settings_suite.makefile(".toml", ineedvalidation=STANDALONE_TOML)
+    out = tmp_path / "evidence.json"
+    result = settings_suite.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    data = json.loads(out.read_text())
+    assert data["library"] == "widgetlib"
+    assert len(data["tests"]) == 1
+    record = data["tests"][0]
+    assert record["nodeid"] == "tests/test_defaulted.py::test_default"
+    assert record["case"] == "kernel-sum"
+    assert record["evidence"] == "code-verification"
+    assert record["basis"] == "floating-point"
+    assert record["acceptance"] == {"tolerance": 1e-12}
+
+
+@pytest.mark.parametrize("collect", [False, True])
+@pytest.mark.parametrize("pyproject_settings", [TOML, "[tool.ineedvalidation]\n"])
+def test_both_settings_files_raise_usage_error(
+    settings_suite, tmp_path, collect, pyproject_settings
+):
+    settings_suite.makeini("[pytest]\n")
+    pyproject = settings_suite.makefile(".toml", pyproject=pyproject_settings)
+    standalone = settings_suite.makefile(".toml", ineedvalidation=STANDALONE_TOML)
+    out = tmp_path / "evidence.json"
+    result = settings_suite.runpytest(*(["--vv-evidence", str(out)] if collect else []))
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    message = result.stderr.str()
+    assert str(pyproject) in message
+    assert str(standalone) in message
+    assert not out.exists()
+
+
+def test_pyproject_settings_without_standalone_file_are_unchanged(
+    settings_suite, tmp_path
+):
+    settings_suite.makefile(
+        ".toml",
+        pyproject=(
+            TOML
+            + "[tool.ineedvalidation.defaults]\n"
+            + '"tests/" = { case = "kernel-sum", evidence = "code-verification" }\n'
+        ),
+    )
+    out = tmp_path / "evidence.json"
+    result = settings_suite.runpytest("--vv-evidence", str(out))
+    result.assert_outcomes(passed=1)
+    data = json.loads(out.read_text())
+    assert data["library"] == "widgetlib"
+    assert len(data["tests"]) == 1
+    record = data["tests"][0]
+    assert record["nodeid"] == "tests/test_defaulted.py::test_default"
+    assert record["case"] == "kernel-sum"
+    assert record["evidence"] == "code-verification"
+    assert record["outcome"] == "passed"
+
+
+def test_vv_library_overrides_standalone_name(settings_suite, tmp_path):
+    settings_suite.makeini("[pytest]\n")
+    settings_suite.makefile(".toml", ineedvalidation=STANDALONE_TOML)
+    out = tmp_path / "evidence.json"
+    result = settings_suite.runpytest(
+        "--vv-evidence", str(out), "--vv-library", "override-lib"
+    )
+    result.assert_outcomes(passed=1)
+    data = json.loads(out.read_text())
+    assert data["library"] == "override-lib"
+    assert len(data["tests"]) == 1
+    assert data["tests"][0]["case"] == "kernel-sum"
+
+
+@pytest.mark.parametrize("collect", [False, True])
+def test_standalone_default_with_misspelled_kind_is_usage_error(
+    settings_suite, tmp_path, collect
+):
+    settings_suite.makeini("[pytest]\n")
+    settings_suite.makefile(
+        ".toml",
+        ineedvalidation=(
+            'library = "widgetlib"\n[defaults]\n'
+            '"unused_tests/" = { case = "kernel-sum", evidence = "code-verificaton" }\n'
+        ),
+    )
+    out = tmp_path / "evidence.json"
+    result = settings_suite.runpytest(*(["--vv-evidence", str(out)] if collect else []))
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    message = result.stderr.str()
+    assert "unused_tests/" in message
+    assert "code-verificaton" in message
+    assert "code-verification" in message
+    assert not out.exists()
+
 
 def test_evidence_records_outcomes(pytester, tmp_path):
     pytester.makepyfile(test_marked=MARKED)
@@ -183,7 +315,10 @@ def test_kind_keyword_round_trips_into_ledger(
         'evidence = "validation"\nreferent = "lab-data"\n',
     ],
 )
-def test_explicit_marker_replaces_all_default_fields(pytester, tmp_path, defaults):
+@pytest.mark.parametrize("source", ["pyproject", "standalone"])
+def test_explicit_marker_replaces_all_default_fields(
+    pytester, tmp_path, defaults, source
+):
     pytester.makepyfile(
         test_model=(
             "import ineedvalidation as vv\n\n"
@@ -191,16 +326,23 @@ def test_explicit_marker_replaces_all_default_fields(pytester, tmp_path, default
             "def test_model():\n    assert True\n"
         )
     )
+    header = (
+        TOML + '[tool.ineedvalidation.defaults."test_model.py"]\n'
+        if source == "pyproject"
+        else '[defaults."test_model.py"]\n'
+    )
+    pytester.makeini("[pytest]\n")
     pytester.makefile(
         ".toml",
-        pyproject=(
-            TOML
-            + '[tool.ineedvalidation.defaults."test_model.py"]\n'
-            + 'case = "default-case"\nsrq = "default response"\n'
-            + defaults
-            + 'basis = "floating-point"\n'
-            + 'acceptance = { metric = "error", tolerance = 0.001 }\n'
-        ),
+        **{
+            "pyproject" if source == "pyproject" else "ineedvalidation": (
+                header
+                + 'case = "default-case"\nsrq = "default response"\n'
+                + defaults
+                + 'basis = "floating-point"\n'
+                + 'acceptance = { metric = "error", tolerance = 0.001 }\n'
+            )
+        },
     )
     out = tmp_path / "evidence.json"
     result = pytester.runpytest("--vv-evidence", str(out))
@@ -251,6 +393,7 @@ def test_no_evidence_file_is_written_without_the_option(pytester, tmp_path):
 
 
 @pytest.mark.parametrize("collect", [False, True])
+@pytest.mark.parametrize("source", ["pyproject", "standalone"])
 @pytest.mark.parametrize(
     ("declaration", "messages"),
     [
@@ -273,7 +416,7 @@ def test_no_evidence_file_is_written_without_the_option(pytester, tmp_path):
     ],
 )
 def test_every_default_is_validated_at_configure_time(
-    pytester, tmp_path, collect, declaration, messages
+    pytester, tmp_path, collect, source, declaration, messages
 ):
     pytester.makepyfile(test_plain="def test_plain():\n    assert True\n")
     evidence_line = (
@@ -281,16 +424,19 @@ def test_every_default_is_validated_at_configure_time(
         if declaration.startswith("evidence =")
         else 'evidence = "code-verification"\n'
     )
+    header = (
+        TOML + '[tool.ineedvalidation.defaults."unused_tests/"]\n'
+        if source == "pyproject"
+        else '[defaults."unused_tests/"]\n'
+    )
+    pytester.makeini("[pytest]\n")
     pytester.makefile(
         ".toml",
-        pyproject=(
-            TOML
-            + '[tool.ineedvalidation.defaults."unused_tests/"]\n'
-            + 'case = "some-case"\n'
-            + evidence_line
-            + declaration
-            + "\n"
-        ),
+        **{
+            "pyproject" if source == "pyproject" else "ineedvalidation": (
+                header + 'case = "some-case"\n' + evidence_line + declaration + "\n"
+            )
+        },
     )
     out = tmp_path / "evidence.json"
     result = pytester.runpytest(*(["--vv-evidence", str(out)] if collect else []))
