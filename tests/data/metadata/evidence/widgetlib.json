@@ -1,0 +1,36 @@
+{
+ "library": "widgetlib",
+ "commit": "0123456",
+ "recorded": "2026-09-04T15:00:00Z",
+ "tests": [
+  {
+   "nodeid": "tests/test_model.py::test_missing_basis",
+   "case": "example-case",
+   "evidence": "code-verification",
+   "outcome": "passed"
+  },
+  {
+   "nodeid": "tests/test_model.py::test_missing_reference_error",
+   "case": "example-case",
+   "evidence": "solution-verification",
+   "reference_model": "fine grid computation",
+   "basis": "floating-point",
+   "acceptance": {"tolerance": 0.001},
+   "outcome": "passed"
+  },
+  {
+   "nodeid": "tests/test_model.py::test_postdated_criterion",
+   "case": "example-case",
+   "evidence": "code-verification",
+   "basis": "exact-algebra",
+   "acceptance": {"registered": "2026-09-05"},
+   "outcome": "passed"
+  },
+  {
+   "nodeid": "tests/test_model.py::test_regression",
+   "case": "example-case",
+   "evidence": null,
+   "outcome": "passed"
+  }
+ ]
+}

@@ -46,6 +46,11 @@ def build_parser():
         command.add_argument("--evidence", help="evidence files directory")
     lint = sub.choices["lint"]
     lint.add_argument("--library-map", help="file listing the known library names")
+    lint.add_argument(
+        "--require-metadata",
+        action="store_true",
+        help="require basis, reference error metadata and criteria dated by the run",
+    )
     render = sub.choices["render"]
     render.add_argument("--view", help="render only this named view")
     render.add_argument(
@@ -78,14 +83,17 @@ def _lint(args):
         summary=summary if files else None,
         library_text=library_text,
         unfiled=evidence.unfiled_cases(loaded, files) if files else None,
+        files=files,
+        require_metadata=args.require_metadata,
     )
     for problem in problems:
         print("LINT:", problem)
-    census = ", ".join(
-        f"{level}={sum(node.level == level for node in loaded.values())}"
-        for level in HIERARCHY_LEVELS
-    )
-    print(f"{len(loaded)} nodes, {census}")
+    if not args.require_metadata:
+        census = ", ".join(
+            f"{level}={sum(node.level == level for node in loaded.values())}"
+            for level in HIERARCHY_LEVELS
+        )
+        print(f"{len(loaded)} nodes, {census}")
     return 1 if problems else 0
 
 

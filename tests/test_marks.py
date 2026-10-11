@@ -3,6 +3,7 @@
 import pytest
 
 import ineedvalidation as vv
+from ineedvalidation.marks import BASES
 
 pytest_plugins = ["pytester"]
 
@@ -35,6 +36,8 @@ def test_case_mark_carries_arguments():
         "referent": None,
         "reference_model": None,
         "alternative": None,
+        "basis": None,
+        "acceptance": None,
     }
 
 
@@ -77,3 +80,66 @@ def test_markers_registered_under_strict_markers(pytester):
     )
     result = pytester.runpytest("--strict-markers", "-q")
     result.assert_outcomes(passed=3)
+
+
+EXPECTED_BASES = (
+    "floating-point",
+    "exact-algebra",
+    "monte-carlo",
+    "coverage",
+    "simulation-based-calibration",
+    "mutation",
+    "spike",
+    "literature",
+    "equivalence",
+)
+
+
+def test_bases_vocabulary():
+    assert BASES == EXPECTED_BASES
+
+
+@pytest.mark.parametrize("basis", EXPECTED_BASES)
+def test_case_accepts_each_basis(basis):
+    mark = vv.case("some-case", "code-verification", basis=basis).mark
+    assert mark.kwargs["basis"] == basis
+
+
+def test_unknown_basis_lists_every_allowed_value():
+    with pytest.raises(ValueError) as error:
+        vv.case("some-case", "code-verification", basis="not-a-basis")
+    assert "not-a-basis" in str(error.value)
+    for basis in EXPECTED_BASES:
+        assert basis in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("acceptance", "exception", "message"),
+    [
+        ({"typo": 1}, ValueError, "typo"),
+        ({"tolerance": float("nan")}, ValueError, "finite"),
+        ({"tolerance": float("inf")}, ValueError, "finite"),
+        ({"tolerance": -float("inf")}, ValueError, "finite"),
+        ({"margin": [1, float("nan")]}, ValueError, "finite"),
+        ({"margin": [1, float("inf")]}, ValueError, "finite"),
+        ({"domain": {"nested": 1}}, TypeError, "acceptance.domain"),
+        ({"domain": ["first", {"nested": 1}]}, TypeError, "acceptance.domain"),
+        ({"domain": [["nested"]]}, TypeError, "acceptance.domain"),
+        ({"metric": None}, TypeError, "acceptance.metric"),
+        ({"registered": "2026-13-01"}, ValueError, "YYYY-MM-DD"),
+        ({"registered": "2026-10-01T00:00"}, ValueError, "YYYY-MM-DD"),
+        ({"registered": "2026-02-29"}, ValueError, "YYYY-MM-DD"),
+        ({"registered": "2026-1-01"}, ValueError, "YYYY-MM-DD"),
+        ({"registered": ["2026-10-01"]}, ValueError, "YYYY-MM-DD"),
+        ([], TypeError, "acceptance must be a dict"),
+    ],
+)
+def test_case_rejects_invalid_acceptance(acceptance, exception, message):
+    with pytest.raises(exception, match=message):
+        vv.case("some-case", "code-verification", acceptance=acceptance)
+
+
+@pytest.mark.parametrize("acceptance", [{}, {"domain": []}])
+def test_case_preserves_empty_acceptance_values(acceptance):
+    mark = vv.case("some-case", "code-verification", acceptance=acceptance).mark
+    assert mark.kwargs["acceptance"] == acceptance

@@ -13,14 +13,16 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ineedvalidation.marks import MARK_CASE, MARK_REGRESSION, MARK_SEAM
+import pytest
+
+from ineedvalidation.marks import MARK_CASE, MARK_REGRESSION, MARK_SEAM, validate_case
 from ineedvalidation.schema import EvidenceFile, TestRecord
 
 MARKER_HELP = {
     MARK_CASE: (
         "vv_case(slug, evidence, srq=None, reference_code=None, "
         "refined_parameter=None, referent=None, reference_model=None, "
-        "alternative=None): the physical case, kind of "
+        "alternative=None, basis=None, acceptance=None): the physical case, kind of "
         "evidence and system response quantity a test exercises "
         "(use ineedvalidation.case)"
     ),
@@ -58,8 +60,24 @@ def pytest_configure(config):
     """Register the markers and, when asked, the evidence collector."""
     for name, text in MARKER_HELP.items():
         config.addinivalue_line("markers", f"{name}: {text}")
+    settings = load_settings(config.rootpath)
+    for prefix, values in settings[1].items():
+        try:
+            if not isinstance(values, dict):
+                raise TypeError("default must be a table")
+            validate_case(
+                values.get("case"),
+                values.get("evidence"),
+                **{k: v for k, v in values.items() if k not in ("case", "evidence")},
+            )
+        except (TypeError, ValueError) as error:
+            raise pytest.UsageError(
+                f"ineedvalidation default {prefix!r}: {error}"
+            ) from error
     if config.getoption("--vv-evidence"):
-        config.pluginmanager.register(EvidenceCollector(config), "vv-evidence")
+        config.pluginmanager.register(
+            EvidenceCollector(config, settings), "vv-evidence"
+        )
 
 
 def load_settings(rootdir):
@@ -116,11 +134,11 @@ def _git_commit(rootdir):
 class EvidenceCollector:
     """Turn marked test items into records and write them at the end of a run."""
 
-    def __init__(self, config):
+    def __init__(self, config, settings):
         """Read the settings for the repository under test."""
         self.config = config
         self.records = {}
-        library, self.defaults = load_settings(config.rootpath)
+        library, self.defaults = settings
         self.library = (
             config.getoption("--vv-library") or library or config.rootpath.name
         )
@@ -140,6 +158,7 @@ class EvidenceCollector:
         case = evidence = srq = seam = None
         reference_code = refined_parameter = referent = None
         reference_model = alternative = None
+        basis = acceptance = None
         if case_mark is not None:
             case, evidence = case_mark.args[0], case_mark.args[1]
             srq = case_mark.kwargs.get("srq")
@@ -148,6 +167,8 @@ class EvidenceCollector:
             referent = case_mark.kwargs.get("referent")
             reference_model = case_mark.kwargs.get("reference_model")
             alternative = case_mark.kwargs.get("alternative")
+            basis = case_mark.kwargs.get("basis")
+            acceptance = case_mark.kwargs.get("acceptance")
         elif seam_mark is None and not regression:
             values = match_default(Path(item.location[0]).as_posix(), self.defaults)
             if values is None:
@@ -159,6 +180,8 @@ class EvidenceCollector:
             referent = values.get("referent")
             reference_model = values.get("reference_model")
             alternative = values.get("alternative")
+            basis = values.get("basis")
+            acceptance = values.get("acceptance")
         if seam_mark is not None:
             seam = (seam_mark.args[0], seam_mark.args[1])
             case = seam_mark.kwargs.get("case") or case
@@ -174,6 +197,8 @@ class EvidenceCollector:
             referent=referent,
             reference_model=reference_model,
             alternative=alternative,
+            basis=basis,
+            acceptance=acceptance,
             seam=seam,
         )
 
@@ -196,4 +221,6 @@ class EvidenceCollector:
             recorded=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             tests=tuple(self.records[key] for key in sorted(self.records)),
         )
-        target.write_text(json.dumps(payload.to_dict(), indent=1) + "\n")
+        target.write_text(
+            json.dumps(payload.to_dict(), indent=1, allow_nan=False) + "\n"
+        )

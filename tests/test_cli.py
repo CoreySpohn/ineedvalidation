@@ -2,6 +2,7 @@ import shutil
 
 import pytest
 from conftest import HAVE_BINARIES
+from test_lint import METADATA_HIER, METADATA_PROBLEMS
 from test_nodes import HIER
 
 from ineedvalidation import cli
@@ -92,3 +93,22 @@ def test_all_views_includes_the_view_files(tmp_path):
     hierarchy = copy(tmp_path)
     assert cli.main(["render", str(hierarchy), "--all-views"]) == 0
     assert (hierarchy / "output" / "branch.gen.d2").exists()
+
+
+def test_lint_require_metadata_prints_exactly_three_lines_and_returns_one(capsys):
+    assert cli.main(["lint", str(METADATA_HIER), "--require-metadata"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == "".join(
+        f"LINT: {problem}\n" for problem in METADATA_PROBLEMS
+    )
+    assert len(captured.out.splitlines()) == 3
+
+
+def test_plain_lint_ignores_metadata_defects_and_returns_zero(capsys):
+    assert cli.main(["lint", str(METADATA_HIER)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == (
+        "1 nodes, complete=1, system=0, subsystem=0, benchmark=0, unit=0\n"
+    )

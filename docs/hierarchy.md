@@ -80,6 +80,23 @@ least one test, a response quantity named by a test must be one the node lists, 
 must join two coupled nodes, and a claimed validation level of 2 or above needs a passing validation test that actually passed, not merely one that was marked. Without any evidence file
 these rules stay off, since there is nothing to check the notes against.
 
+Add `--require-metadata` to check the criteria recorded with each test:
+
+```console
+$ ineedvalidation lint hierarchy/ --require-metadata
+```
+
+This reports a non-regression record without `basis`, a record naming a
+`reference_model` without `acceptance.reference_error`, and an
+`acceptance.registered` date later than the ledger's `recorded` calendar date.
+A criterion registered on the day of the run is allowed. Regression records are
+exempt from all three checks. These checks run regardless of test outcome and do
+not change which evidence kinds the summary counts.
+
+The flag prints one `LINT:` line per problem and exits 1 if there are any problems;
+it omits the node census. Plain `lint` keeps its existing checks and census, and
+does not require this metadata, including when reading a 1.0 ledger.
+
 `ineedvalidation scaffold hierarchy/` writes a stub note for every case a test names
 that no node owns. The stub leaves the level blank so that the curator has to place it
 deliberately. An existing note is never overwritten.

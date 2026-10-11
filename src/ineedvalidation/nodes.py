@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -11,6 +12,7 @@ from .schema import (
     HIERARCHY_LEVELS,
     REFERENT_STATUS,
     VALIDATION_LEVELS,
+    EvidenceFile,
     Node,
 )
 
@@ -74,6 +76,8 @@ def lint(
     summary: dict | None = None,
     library_text: str | None = None,
     unfiled: dict[str, tuple[str, ...]] | None = None,
+    files: list[EvidenceFile] | None = None,
+    require_metadata: bool = False,
 ) -> list[str]:
     """Report every rule violation in the hierarchy, as one line each."""
     problems: list[str] = []
@@ -154,4 +158,30 @@ def lint(
         problems.append(
             f"case {case} is not owned by any node (from {', '.join(libraries)})"
         )
+    if require_metadata:
+        for ledger in files or []:
+            for record in ledger.tests:
+                # A null evidence kind and no seam is how the ledger records
+                # regressions; a seam anchor has no kind but still needs a basis.
+                if record.evidence is None and record.seam is None:
+                    continue
+                label = f"{ledger.library}: {record.nodeid}"
+                if not record.basis:
+                    problems.append(f"{label}: missing basis")
+                acceptance = record.acceptance or {}
+                if record.reference_model is not None and (
+                    "reference_error" not in acceptance
+                    or acceptance["reference_error"] is None
+                ):
+                    problems.append(
+                        f"{label}: reference_model requires acceptance.reference_error"
+                    )
+                registered = acceptance.get("registered")
+                if registered and date.fromisoformat(registered) > date.fromisoformat(
+                    ledger.recorded[:10]
+                ):
+                    problems.append(
+                        f"{label}: acceptance.registered {registered} "
+                        f"postdates recorded {ledger.recorded[:10]}"
+                    )
     return problems

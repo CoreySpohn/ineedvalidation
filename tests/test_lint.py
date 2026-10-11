@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import pytest
 from test_nodes import HIER
 
 from ineedvalidation import evidence, nodes
@@ -167,3 +168,73 @@ def test_a_node_id_must_start_with_its_level():
     got = loaded()
     got["benchmark-bench"] = replace(got["benchmark-bench"], level="unit")
     assert any("does not start with its level" in p for p in nodes.lint(got))
+
+
+METADATA_HIER = HIER.parent / "metadata"
+METADATA_PROBLEMS = [
+    "widgetlib: tests/test_model.py::test_missing_basis: missing basis",
+    "widgetlib: tests/test_model.py::test_missing_reference_error: "
+    "reference_model requires acceptance.reference_error",
+    "widgetlib: tests/test_model.py::test_postdated_criterion: "
+    "acceptance.registered 2026-09-05 postdates recorded 2026-09-04",
+]
+
+
+def test_require_metadata_reports_each_defect_and_exempts_regression():
+    files = evidence.load_dir(METADATA_HIER / "evidence")
+    assert nodes.lint({}, files=files, require_metadata=True) == METADATA_PROBLEMS
+
+
+def test_plain_lint_does_not_require_metadata():
+    files = evidence.load_dir(METADATA_HIER / "evidence")
+    assert nodes.lint({}, files=files) == []
+
+
+@pytest.mark.parametrize("registered", ["2026-09-03", "2026-09-04"])
+@pytest.mark.parametrize("reference_error", [0, 0.0, False, "bounded", [0, 0.001]])
+def test_metadata_accepts_reference_error_and_criteria_no_later_than_run(
+    registered, reference_error
+):
+    ledger = evidence.load_dir(METADATA_HIER / "evidence")[0]
+    record = replace(
+        ledger.tests[1],
+        acceptance={"reference_error": reference_error, "registered": registered},
+    )
+    assert (
+        nodes.lint({}, files=[replace(ledger, tests=(record,))], require_metadata=True)
+        == []
+    )
+
+
+def test_regressions_are_exempt_from_all_metadata_checks():
+    ledger = evidence.load_dir(METADATA_HIER / "evidence")[0]
+    record = replace(
+        ledger.tests[-1],
+        reference_model="reference retained from a case marker",
+        acceptance={"registered": "2026-09-05"},
+    )
+    assert (
+        nodes.lint({}, files=[replace(ledger, tests=(record,))], require_metadata=True)
+        == []
+    )
+
+
+def test_seam_records_without_a_basis_are_reported():
+    ledger = evidence.load_dir(METADATA_HIER / "evidence")[0]
+    record = replace(
+        ledger.tests[-1], seam=("producer", "consumer"), basis=None, acceptance=None
+    )
+    problems = nodes.lint(
+        {}, files=[replace(ledger, tests=(record,))], require_metadata=True
+    )
+    assert problems == [f"{ledger.library}: {record.nodeid}: missing basis"]
+
+
+@pytest.mark.parametrize("outcome", ["passed", "failed", "skipped", None])
+def test_metadata_checks_run_regardless_of_test_outcome(outcome):
+    ledger = evidence.load_dir(METADATA_HIER / "evidence")[0]
+    records = tuple(replace(record, outcome=outcome) for record in ledger.tests)
+    assert (
+        nodes.lint({}, files=[replace(ledger, tests=records)], require_metadata=True)
+        == METADATA_PROBLEMS
+    )
