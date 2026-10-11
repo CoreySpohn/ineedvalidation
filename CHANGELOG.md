@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0](https://github.com/CoreySpohn/ineedvalidation/compare/v1.0.0...v1.1.0) (2026-10-11)
+
+
+### Features
+
+* **lint:** one owner per case and repeated library maps ([c76a020](https://github.com/CoreySpohn/ineedvalidation/commit/c76a0204743e4b7872d2373f3299d9fbdc89d623))
+* **marks:** basis, acceptance criteria and validated defaults with lint --require-metadata ([32124c9](https://github.com/CoreySpohn/ineedvalidation/commit/32124c9ef6e24de6b0b9be5175d037ed5f5b097e))
+* **marks:** reference_model and alternative kind keywords ([1b0e834](https://github.com/CoreySpohn/ineedvalidation/commit/1b0e8348273024e22f1084832bf92251fd7c8290))
+* **plugin:** standalone ineedvalidation.toml settings for suites without a pyproject ([c56a14f](https://github.com/CoreySpohn/ineedvalidation/commit/c56a14fdae54fe0ee4f181c7e36d5e26289726d0))
+* **plugin:** vv_record fixture for recording numeric results ([8649791](https://github.com/CoreySpohn/ineedvalidation/commit/86497913ebb1386e4046ca544a11ef5e3c25f37b))
+* **plugin:** xdist-safe evidence collector with run mode and suite root ([d5869a7](https://github.com/CoreySpohn/ineedvalidation/commit/d5869a767b2abe61358ac65c07faf7d3d23c9e3b))
+
+
+### Bug Fixes
+
+* **plugin:** settle outcome folding, collect-only lint and defaults validation ([249fab7](https://github.com/CoreySpohn/ineedvalidation/commit/249fab7bc70d907cb1f9f9463bd102e89b664d39))
+
 ## [1.0.0](https://github.com/CoreySpohn/ineedvalidation/compare/v0.0.1...v1.0.0) (2026-09-16)
 
 
