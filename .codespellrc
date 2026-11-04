@@ -1,0 +1,3 @@
+[codespell]
+# The stored D2 SVG contains embedded font data.
+skip = .git,*.ipynb,uv.lock,*/_build,*.fits,*/sample.svg
