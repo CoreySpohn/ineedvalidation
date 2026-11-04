@@ -96,6 +96,9 @@ In TOML, quote the date (`registered = "2026-09-01"`); an unquoted date
 is parsed as a date object instead of the required string.
 
 ```python
+import ineedvalidation as vv
+
+
 @vv.case(
     "kernel-sum", "code-verification", basis="floating-point",
     acceptance={"metric": "absolute error", "tolerance": 1e-12},
@@ -221,6 +224,9 @@ Each call appends one result, in call order, to the marked or defaulted test's
 `results` list. Results remain in the ledger when a later assertion fails.
 
 ```python
+import ineedvalidation as vv
+
+
 @vv.case("kernel-sum", "code-verification")
 def test_sum(vv_record):
     vv_record(value=0.25, interval=(0.2, 0.3), reference=0.25, spacing=0.1)
