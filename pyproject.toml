@@ -67,6 +67,7 @@ convention = "google"
 "tests/**" = ["D"]
 
 [tool.pytest.ini_options]
+filterwarnings = ["error"]
 testpaths = ["tests"]
 markers = [
     "medium: tests with a 30-second default time budget",
