@@ -10,34 +10,32 @@ import ineedvalidation as vv
 
 
 @vv.case("free-space-propagation", "code-verification", srq="on-axis intensity")
-def test_matches_closed_form():
-    ...
+def test_matches_closed_form(): ...
 
 
 @vv.case(
-    "free-space-propagation", "solution-verification",
-    refined_parameter="grid-spacing", reference_model="full-resolution propagation",
+    "free-space-propagation",
+    "solution-verification",
+    refined_parameter="grid-spacing",
+    reference_model="full-resolution propagation",
 )
-def test_second_order_in_the_step():
-    ...
+def test_second_order_in_the_step(): ...
 
 
 @vv.case(
-    "free-space-propagation", "uncertainty-quantification",
+    "free-space-propagation",
+    "uncertainty-quantification",
     alternative="alternative propagation model",
 )
-def test_sensitivity_to_model_choice():
-    ...
+def test_sensitivity_to_model_choice(): ...
 
 
 @vv.seam("optics", "detector", case="detector-frame")
-def test_photon_scale_anchor():
-    ...
+def test_photon_scale_anchor(): ...
 
 
 @vv.regression
-def test_frozen_output():
-    ...
+def test_frozen_output(): ...
 ```
 
 ## The arguments
@@ -100,20 +98,22 @@ import ineedvalidation as vv
 
 
 @vv.case(
-    "kernel-sum", "code-verification", basis="floating-point",
+    "kernel-sum",
+    "code-verification",
+    basis="floating-point",
     acceptance={"metric": "absolute error", "tolerance": 1e-12},
 )
-def test_sum_matches_exact_value():
-    ...
+def test_sum_matches_exact_value(): ...
 
 
 @vv.case(
-    "free-space-propagation", "solution-verification",
-    reference_model="full-resolution propagation", basis="equivalence",
+    "free-space-propagation",
+    "solution-verification",
+    reference_model="full-resolution propagation",
+    basis="equivalence",
     acceptance={"reference_error": 1e-8, "registered": "2026-09-01"},
 )
-def test_matches_reference_computation():
-    ...
+def test_matches_reference_computation(): ...
 ```
 
 Neither keyword is required at decoration time. `lint --require-metadata` checks

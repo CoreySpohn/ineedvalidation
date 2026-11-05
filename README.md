@@ -9,39 +9,42 @@ The vocabulary follows Oberkampf and Roy, *Verification and Validation in Scient
 ```python
 import ineedvalidation as vv
 
+
 @vv.case("free-space-propagation", "code-verification", srq="on-axis intensity")
-def test_matches_closed_form():
-    ...
+def test_matches_closed_form(): ...
+
 
 @vv.case(
-    "free-space-propagation", "solution-verification",
-    refined_parameter="grid-spacing", reference_model="full-resolution propagation",
+    "free-space-propagation",
+    "solution-verification",
+    refined_parameter="grid-spacing",
+    reference_model="full-resolution propagation",
 )
-def test_second_order_in_the_step():
-    ...
+def test_second_order_in_the_step(): ...
+
 
 @vv.case(
-    "free-space-propagation", "uncertainty-quantification",
+    "free-space-propagation",
+    "uncertainty-quantification",
     alternative="alternative propagation model",
 )
-def test_sensitivity_to_model_choice():
-    ...
+def test_sensitivity_to_model_choice(): ...
+
 
 @vv.case("free-space-propagation", "cross-code-benchmark", reference_code="other-code")
-def test_matches_independent_code():
-    ...
+def test_matches_independent_code(): ...
+
 
 @vv.case("detector-frame", "validation", referent="lab-flat-field-2026")
-def test_matches_measured_frames():
-    ...
+def test_matches_measured_frames(): ...
+
 
 @vv.seam("optics", "detector", case="detector-frame")
-def test_photon_scale_anchor():
-    ...
+def test_photon_scale_anchor(): ...
+
 
 @vv.regression
-def test_frozen_output():
-    ...
+def test_frozen_output(): ...
 ```
 
 Evidence kinds: `code-verification`, `solution-verification`, `cross-code-benchmark`, `validation` (measured data only) and `uncertainty-quantification`. They are spelled out rather than lettered so a marked test reads without a key. `reference_code=` belongs to a cross-code benchmark, `refined_parameter=` and `reference_model=` to solution verification, `referent=` to validation and `alternative=` to uncertainty quantification; each raises when used with another kind, so a mislabelled test fails at import. Regression tests claim no kind of evidence.
