@@ -31,7 +31,6 @@ docs = [
 ]
 test = [
     "hypothesis>=6.79.1",
-    "pytest-cov>=1.0",
     # xdist <3.4 discards pending worker reports on an early stop (#963).
     "pytest-xdist>=3.4",
     "pytest-testmon>=2.1.1",
