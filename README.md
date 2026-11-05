@@ -1,5 +1,13 @@
 # ineedvalidation
 
+<p align="center">
+  <a href="https://pypi.org/project/ineedvalidation/"><img src="https://img.shields.io/pypi/v/ineedvalidation.svg?style=flat-square&logo=pypi" alt="PyPI"/></a>
+  <a href="https://ineedvalidation.readthedocs.io"><img src="https://readthedocs.org/projects/ineedvalidation/badge/?version=latest&style=flat-square" alt="Documentation Status"/></a>
+  <a href="https://github.com/CoreySpohn/ineedvalidation/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/CoreySpohn/ineedvalidation/ci.yml?branch=main&style=flat-square&logo=github&label=tests" alt="Tests"/></a>
+  <a href="https://github.com/CoreySpohn/ineedvalidation/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License"/></a>
+  <a href="https://github.com/CoreySpohn/ineedvalidation/blob/main/pyproject.toml"><img src="https://img.shields.io/badge/python-3.12%2B-blue.svg?style=flat-square&logo=python" alt="Python 3.12+"/></a>
+</p>
+
 Declare which physical case, kind of evidence and response quantity a test exercises; collect the declarations across repositories into an evidence ledger; lint and render a validation hierarchy from node notes plus that ledger.
 
 The vocabulary follows Oberkampf and Roy, *Verification and Validation in Scientific Computing* (2010): a validation hierarchy of unit, benchmark, subsystem and system cases, and a strict separation between verification (the code solves the equations correctly) and validation (the equations describe the measured world).
